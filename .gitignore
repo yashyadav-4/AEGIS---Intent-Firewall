@@ -1,0 +1,46 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Data and generated artifacts
+Dataset/
+dataset/
+*.npy
+*.h5
+*.keras
+*.tflite
+*.joblib
+modern_attacks/
+evaluation/*.txt
+android_emulator_screen.png
+
+# Audio/media artifacts
+*.flac
+*.wav
+*.mp3
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+training_log*.txt
+eval_modern_log*.txt
+export_*.txt
+la_eval_scores.txt
+
+# macOS
+.DS_Store
+
+# Android / React Native generated artifacts
+android/AEGIS Mobile App/AEGIS---Intent-Firewall-Daksh/node_modules/
+android/AEGIS Mobile App/AEGIS---Intent-Firewall-Daksh/android/.gradle/
+android/AEGIS Mobile App/AEGIS---Intent-Firewall-Daksh/android/app/build/
+android/AEGIS Mobile App/AEGIS---Intent-Firewall-Daksh/android/app/.cxx/
+android/AEGIS Mobile App/AEGIS---Intent-Firewall-Daksh/android/build/
+
+# Misc
+.vscode/
