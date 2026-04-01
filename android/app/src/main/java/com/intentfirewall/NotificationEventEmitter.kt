@@ -12,7 +12,10 @@ object NotificationEventEmitter {
         appName: String,
         title: String,
         text: String,
-        packageName: String
+        packageName: String,
+        flagged: Boolean,
+        matchedCategory: String,
+        context: String
     ) {
         try {
             val reactApplication = context.applicationContext as ReactApplication
@@ -24,6 +27,9 @@ object NotificationEventEmitter {
                 putString("title", title)
                 putString("text", text)
                 putString("packageName", packageName)
+                putBoolean("flagged", flagged)
+                putString("matchedCategory", matchedCategory)
+                putString("context", context)
             }
 
             reactContext
