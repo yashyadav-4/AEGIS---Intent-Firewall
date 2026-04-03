@@ -1,0 +1,24 @@
+# Aegis-Zero root Python environment dependencies
+# Python target: 3.13
+#
+# Install:
+#   /opt/miniconda3/bin/python -m pip install -r requirements.txt
+#
+# For Apple Silicon CPU-only PyTorch wheels (recommended for this project):
+#   /opt/miniconda3/bin/python -m pip install torch torchaudio \
+#     --index-url https://download.pytorch.org/whl/cpu
+
+numpy>=1.26
+scipy>=1.11
+librosa>=0.10
+soundfile>=0.12
+tqdm>=4.66
+scikit-learn>=1.4
+
+# Core training/inference stack
+tensorflow==2.21.0
+transformers>=4.40
+
+# WavLM feature extraction backend
+torch
+torchaudio

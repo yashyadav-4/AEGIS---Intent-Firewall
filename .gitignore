@@ -1,10 +1,41 @@
-# OSX
-#
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Data and generated artifacts
+Dataset/
+dataset/
+*.npy
+*.h5
+*.keras
+*.tflite
+*.joblib
+modern_attacks/
+evaluation/*.txt
+android_emulator_screen.png
+
+# Audio/media artifacts
+*.flac
+*.wav
+*.mp3
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+training_log*.txt
+eval_modern_log*.txt
+export_*.txt
+la_eval_scores.txt
+
+# macOS
 .DS_Store
 
 # Xcode
-#
-build/
 *.pbxuser
 !default.pbxuser
 *.mode1v3
@@ -23,7 +54,6 @@ DerivedData
 **/.xcode.env.local
 
 # Android/IntelliJ
-#
 build/
 .idea
 .gradle
@@ -35,19 +65,19 @@ local.properties
 !debug.keystore
 .kotlin/
 
-# node.js
-#
+# Android / React Native generated artifacts
+android/AEGIS Mobile App/AEGIS---Intent-Firewall-Daksh/node_modules/
+android/AEGIS Mobile App/AEGIS---Intent-Firewall-Daksh/android/.gradle/
+android/AEGIS Mobile App/AEGIS---Intent-Firewall-Daksh/android/app/build/
+android/AEGIS Mobile App/AEGIS---Intent-Firewall-Daksh/android/app/.cxx/
+android/AEGIS Mobile App/AEGIS---Intent-Firewall-Daksh/android/build/
+
+# Node.js
 node_modules/
 npm-debug.log
 yarn-error.log
 
-# fastlane
-#
-# It is recommended to not store the screenshots in the git repo. Instead, use fastlane to re-generate the
-# screenshots whenever they are needed.
-# For more information about the recommended setup visit:
-# https://docs.fastlane.tools/best-practices/source-control/
-
+# Fastlane
 **/fastlane/report.xml
 **/fastlane/Preview.html
 **/fastlane/screenshots
@@ -60,10 +90,10 @@ yarn-error.log
 **/Pods/
 /vendor/bundle/
 
-# Temporary files created by Metro to check the health of the file watcher
+# Temporary files created by Metro
 .metro-health-check*
 
-# testing
+# Testing
 /coverage
 
 # Yarn
@@ -73,3 +103,6 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# Misc
+.vscode/
