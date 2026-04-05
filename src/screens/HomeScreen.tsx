@@ -2,10 +2,16 @@ import React, {useState, useEffect} from 'react';
 import {
   View, Text, StyleSheet, StatusBar,
   ScrollView, Switch, TouchableOpacity,
-  NativeEventEmitter, NativeModules,
+  DeviceEventEmitter,
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
-import {getSettings, saveSettings, saveThreat, getThreats, Threat} from '../utils/storage';
+import {
+  getSettings,
+  saveSettings,
+  saveThreat,
+  getThreats,
+  Threat,
+} from '../utils/storage';
 import {detectScam} from '../utils/scamDetector';
 
 const APP_ICONS: Record<string, string> = {
@@ -34,9 +40,9 @@ const HomeScreen = () => {
   }, []);
 
   useEffect(() => {
-    const eventEmitter = new NativeEventEmitter();
-    const subscription = eventEmitter.addListener('onNotification', async data => {
+    const subscription = DeviceEventEmitter.addListener('onNotification', async data => {
       const settings = await getSettings();
+
       if (!settings.messageProtection) return;
 
       // Use native Tier 1 signal if available, fall back to JS detector
@@ -71,12 +77,12 @@ const HomeScreen = () => {
         loadRecentThreats();
 
         if (!settings.autoBlock) {
-          navigation.navigate('Warning' as never, {
+          (navigation as any).navigate('Warning', {
             category,
             confidence,
             message: data.text,
             app: data.appName,
-          } as never);
+          });
         }
       }
     });
