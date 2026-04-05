@@ -1,4 +1,4 @@
-package com.aegis.audio
+package com.intentfirewall
 
 // Gradle dependencies:
 // implementation 'org.tensorflow:tensorflow-lite:2.14.0'

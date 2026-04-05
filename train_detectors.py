@@ -180,6 +180,7 @@ def _train_single_detector(
         epochs=epochs,
         batch_size=256,
         callbacks=callbacks,
+        class_weight={0: 4.9186, 1: 0.5566},
         verbose=2,
     )
 
@@ -286,6 +287,7 @@ def main() -> None:
         steps_per_epoch=steps_per_epoch_phase,
         epochs=30,
         callbacks=callbacks_phase,
+        class_weight={0: 4.9186, 1: 0.5566},
         verbose=2,
     )
 
@@ -329,6 +331,7 @@ def main() -> None:
         steps_per_epoch=steps_per_epoch_glottal,
         epochs=30,
         callbacks=callbacks_glottal,
+        class_weight={0: 4.9186, 1: 0.5566},
         verbose=2,
     )
 
@@ -372,6 +375,7 @@ def main() -> None:
         steps_per_epoch=steps_per_epoch_wavlm,
         epochs=20,
         callbacks=callbacks_wavlm,
+        class_weight={0: 4.9186, 1: 0.5566},
         verbose=2,
     )
 
@@ -438,6 +442,7 @@ def main() -> None:
         steps_per_epoch=steps_per_epoch_ensemble,
         epochs=100,
         callbacks=ensemble_callbacks,
+        class_weight={0: 4.9186, 1: 0.5566},
         verbose=2,
     )
 
