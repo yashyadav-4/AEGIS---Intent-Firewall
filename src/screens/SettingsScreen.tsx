@@ -1,10 +1,17 @@
 import React, {useState, useEffect} from 'react';
 import {
   View, Text, StyleSheet, StatusBar,
-  ScrollView, Switch, TouchableOpacity,
+  ScrollView, Switch, TouchableOpacity, Alert,
 } from 'react-native';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import {clearThreats, getSettings, saveSettings} from '../utils/storage';
+import {
+  getPermissionSnapshot,
+  requestRequiredPermissions,
+  openNotificationAccessSettings,
+  openAppPermissionSettings,
+  PermissionSnapshot,
+} from '../utils/permissionManager';
 
 const SettingsScreen = () => {
   const navigation = useNavigation();
@@ -12,6 +19,16 @@ const SettingsScreen = () => {
   const [autoBlock, setAutoBlock] = useState(false);
   const [vibration, setVibration] = useState(true);
   const [strictMode, setStrictMode] = useState(false);
+  const [permissions, setPermissions] = useState<PermissionSnapshot>({
+    recordAudio: false,
+    readPhoneState: false,
+    postNotifications: true,
+  });
+
+  const refreshPermissions = async () => {
+    const snapshot = await getPermissionSnapshot();
+    setPermissions(snapshot);
+  };
 
   // ─── Load saved settings on mount ──────────────────────
   useEffect(() => {
@@ -21,9 +38,16 @@ const SettingsScreen = () => {
       setStrictMode(saved.strictMode);
       setNotifications(saved.notifications);
       setVibration(saved.vibration);
+      await refreshPermissions();
     };
     loadSettings();
   }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      refreshPermissions();
+    }, []),
+  );
 
   // ─── Save a single setting when toggled ────────────────
   const handleToggle = async (
@@ -38,6 +62,27 @@ const SettingsScreen = () => {
   const handleClearHistory = async () => {
     await clearThreats();
   };
+
+  const handleRequestPermissions = async () => {
+    const result = await requestRequiredPermissions();
+    setPermissions(result);
+
+    if (result.recordAudio && result.readPhoneState && result.postNotifications) {
+      Alert.alert('Permissions ready', 'All required runtime permissions are granted.');
+      return;
+    }
+
+    Alert.alert(
+      'Permissions still needed',
+      'Some permissions are still denied. Tap "Open App Permission Settings" to allow them manually.',
+    );
+  };
+
+  const statusChip = (granted: boolean) => (
+    <View style={[styles.statusChip, granted ? styles.grantedChip : styles.missingChip]}>
+      <Text style={styles.statusChipText}>{granted ? 'Granted' : 'Missing'}</Text>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
@@ -81,6 +126,42 @@ const SettingsScreen = () => {
             />
           </View>
         ))}
+
+        <Text style={styles.sectionTitle}>PERMISSIONS</Text>
+
+        <View style={styles.permissionCard}>
+          <View style={styles.permissionRow}>
+            <Text style={styles.permissionLabel}>Microphone</Text>
+            {statusChip(permissions.recordAudio)}
+          </View>
+          <View style={styles.permissionRow}>
+            <Text style={styles.permissionLabel}>Phone State</Text>
+            {statusChip(permissions.readPhoneState)}
+          </View>
+          <View style={styles.permissionRow}>
+            <Text style={styles.permissionLabel}>Notifications</Text>
+            {statusChip(permissions.postNotifications)}
+          </View>
+          <Text style={styles.permissionHint}>
+            Notification Access is a special Android setting. Use the button below and enable Intent Firewall.
+          </Text>
+        </View>
+
+        <TouchableOpacity style={styles.actionButton} onPress={handleRequestPermissions}>
+          <Text style={styles.actionText}>Grant Required Permissions</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionButtonSecondary}
+          onPress={openNotificationAccessSettings}>
+          <Text style={styles.actionTextSecondary}>Open Notification Access</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionButtonSecondary}
+          onPress={openAppPermissionSettings}>
+          <Text style={styles.actionTextSecondary}>Open App Permission Settings</Text>
+        </TouchableOpacity>
 
         <Text style={styles.sectionTitle}>NOTIFICATIONS</Text>
 
@@ -179,6 +260,61 @@ const styles = StyleSheet.create({
   settingLeft: {flex: 1},
   settingTitle: {fontSize: 15, fontWeight: '600', color: '#fff'},
   settingSub: {fontSize: 12, color: '#A0AEC0', marginTop: 2},
+  permissionCard: {
+    backgroundColor: '#16213E', borderRadius: 12, padding: 16,
+    marginBottom: 10, borderWidth: 1, borderColor: '#2D3748',
+  },
+  permissionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  permissionLabel: {fontSize: 14, color: '#fff', fontWeight: '600'},
+  statusChip: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+  },
+  grantedChip: {
+    backgroundColor: '#0D2818',
+    borderColor: '#2D6A4F',
+  },
+  missingChip: {
+    backgroundColor: '#2D0D0D',
+    borderColor: '#E63946',
+  },
+  statusChipText: {
+    fontSize: 11,
+    color: '#fff',
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  permissionHint: {
+    color: '#A0AEC0',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 6,
+  },
+  actionButton: {
+    backgroundColor: '#E63946',
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  actionText: {color: '#fff', fontWeight: '700', fontSize: 14},
+  actionButtonSecondary: {
+    backgroundColor: '#1A1A2E',
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#2D3748',
+  },
+  actionTextSecondary: {color: '#A0AEC0', fontWeight: '700', fontSize: 13},
   aboutCard: {
     backgroundColor: '#16213E', borderRadius: 12, padding: 20,
     borderWidth: 1, borderColor: '#2D3748', alignItems: 'center',

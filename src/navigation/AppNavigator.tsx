@@ -8,11 +8,16 @@ import SettingsScreen from '../screens/SettingsScreen';
 
 const Stack = createStackNavigator();
 
-const WarningScreenWrapper = ({navigation}: any) => {
+const WarningScreenWrapper = ({route, navigation}: any) => {
+  const {
+    category = 'Suspicious Message',
+    confidence = 85,
+  } = route.params || {};
+
   return (
     <WarningScreen
-      category="Urgency / Financial Scam"
-      confidence={94}
+      category={category}
+      confidence={confidence}
       onBlock={() => navigation.goBack()}
       onDismiss={() => navigation.goBack()}
       onCallHelp={() => navigation.goBack()}

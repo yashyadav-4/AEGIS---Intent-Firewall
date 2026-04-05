@@ -15,7 +15,7 @@ object NotificationEventEmitter {
         packageName: String,
         flagged: Boolean,
         matchedCategory: String,
-        context: String
+        conversationContext: String
     ) {
         try {
             val reactApplication = context.applicationContext as ReactApplication
@@ -29,7 +29,7 @@ object NotificationEventEmitter {
                 putString("packageName", packageName)
                 putBoolean("flagged", flagged)
                 putString("matchedCategory", matchedCategory)
-                putString("context", context)
+                putString("context", conversationContext)
             }
 
             reactContext

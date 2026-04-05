@@ -36,23 +36,34 @@ const HomeScreen = () => {
   useEffect(() => {
     const eventEmitter = new NativeEventEmitter();
     const subscription = eventEmitter.addListener('onNotification', async data => {
-      console.log('🔥 Notification received in JS:', data);
-
       const settings = await getSettings();
       if (!settings.messageProtection) return;
 
-      const result = detectScam(data.text);
-      console.log('🔍 Scam result:', result);
+      // Use native Tier 1 signal if available, fall back to JS detector
+      const nativeFlagged: boolean = data.flagged === true;
+      const nativeCategory: string = data.matchedCategory || '';
 
-      if (result.isScam) {
-        console.log('🚨 SCAM DETECTED:', result.category, result.confidence);
+      const jsResult = detectScam(data.text);
 
+      // Combine: native flag OR JS detector triggers warning
+      const isScam = nativeFlagged || jsResult.isScam;
+      const category = nativeFlagged && nativeCategory
+        ? nativeCategory
+        : jsResult.category;
+      const confidence = nativeFlagged
+        ? Math.max(jsResult.confidence, 85)
+        : jsResult.confidence;
+
+      console.log('[Aegis] native:', nativeFlagged, nativeCategory,
+                  '| js:', jsResult.isScam, jsResult.category);
+
+      if (isScam) {
         await saveThreat({
           app: data.appName,
           appIcon: APP_ICONS[data.appName] || '📩',
           message: data.text,
-          category: result.category,
-          confidence: result.confidence,
+          category,
+          confidence,
           blocked: settings.autoBlock,
           time: 'Just now',
         });
@@ -61,8 +72,8 @@ const HomeScreen = () => {
 
         if (!settings.autoBlock) {
           navigation.navigate('Warning' as never, {
-            category: result.category,
-            confidence: result.confidence,
+            category,
+            confidence,
             message: data.text,
             app: data.appName,
           } as never);
