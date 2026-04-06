@@ -6,7 +6,14 @@ import android.service.notification.StatusBarNotification
 import android.util.Log
 
 class NotificationService : NotificationListenerService() {
-    private val tier3 by lazy { Tier3Classifier(applicationContext) }
+    private val tier3: Tier3Classifier? by lazy {
+        try {
+            Tier3Classifier(applicationContext)
+        } catch (e: Exception) {
+            Log.e("IntentFirewall", "Tier3 disabled: model asset missing or failed to load", e)
+            null
+        }
+    }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val packageName = sbn.packageName
@@ -68,14 +75,20 @@ class NotificationService : NotificationListenerService() {
 
             // Tier 3 — escalate
             val tier3Flagged = if (waitTier3 || tier2Result.isScam) {
-                // Use Tier 1 / Tier 2 result as proxy feature vector
-                val proxyFeatures = FloatArray(768) {
-                    if (finalFlagged) 0.8f else tier2Result.confidence
+                val tier3Model = tier3
+                if (tier3Model != null) {
+                    // Use Tier 1 / Tier 2 result as proxy feature vector
+                    val proxyFeatures = FloatArray(768) {
+                        if (finalFlagged) 0.8f else tier2Result.confidence
+                    }
+                    val tier3Result = tier3Model.analyze(proxyFeatures)
+                    Log.d("AegisZero", "[T3] score=${tier3Result.confidence} " +
+                          "latency=${tier3Result.latencyMs}ms")
+                    tier3Result.isScam
+                } else {
+                    Log.w("IntentFirewall", "Tier3 skipped: model not available")
+                    false
                 }
-                val tier3Result = tier3.analyze(proxyFeatures)
-                Log.d("AegisZero", "[T3] score=${tier3Result.confidence} " +
-                      "latency=${tier3Result.latencyMs}ms")
-                tier3Result.isScam
             } else false
 
             // Final combined flag

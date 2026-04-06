@@ -4,10 +4,7 @@ import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import {
   getAllPermissionStatus,
   PermissionStatus,
-  requestNotificationPermission,
   promptNotificationListenerSetup,
-  requestCallScreeningPermission,
-  requestAudioRecordingPermission,
   openPermissionSettings,
   requestAllRequiredPermissions
 } from '../utils/permissionManager';
@@ -20,6 +17,7 @@ const SettingsScreen = () => {
     notificationListener: false,
     callScreening: false,
     audioRecording: false,
+    sms: false,
   });
 
   const [notifications, setNotifications] = useState(true);
@@ -76,7 +74,13 @@ const SettingsScreen = () => {
     const result = await requestAllRequiredPermissions();
     setPermissions(result);
 
-    if (result.audioRecording && result.callScreening && result.notification) {
+    if (
+      result.audioRecording &&
+      result.callScreening &&
+      result.notification &&
+      result.sms &&
+      result.notificationListener
+    ) {
       Alert.alert('Permissions ready', 'All required runtime permissions are granted.');
       return;
     }
@@ -169,6 +173,10 @@ const SettingsScreen = () => {
           <View style={styles.permissionRow}>
             <Text style={styles.permissionLabel}>Notification Listener</Text>
             {statusChip(permissions.notificationListener)}
+          </View>
+          <View style={styles.permissionRow}>
+            <Text style={styles.permissionLabel}>SMS</Text>
+            {statusChip(permissions.sms)}
           </View>
           <Text style={styles.permissionHint}>
             Notification Access is a special Android setting needed for reading OTPs.
