@@ -4,6 +4,7 @@ import {createStackNavigator, StackScreenProps} from '@react-navigation/stack';
 import HomeScreen from '../screens/HomeScreen';
 import WarningScreen from '../screens/WarningScreen';
 import HistoryScreen from '../screens/HistoryScreen';
+import { AnalyticsScreen } from '../screens/AnalyticsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import { DebugScreen } from '../screens/DebugScreen';
 import {RootStackParamList} from './types';
@@ -49,6 +50,7 @@ const AppNavigator = () => {
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="Warning" component={WarningScreenWrapper} />
         <Stack.Screen name="History" component={HistoryScreen} />
+        <Stack.Screen name="Analytics" component={AnalyticsScreen} />
         <Stack.Screen name="Settings" component={SettingsScreen} />
         <Stack.Screen name="Debug" component={DebugScreen} />
       </Stack.Navigator>

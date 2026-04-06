@@ -7,6 +7,7 @@ import {
 import {useNavigation} from '@react-navigation/native';
 import type {StackNavigationProp} from '@react-navigation/stack';
 import {getSettings, saveSettings, saveThreat, getThreats, Threat} from '../utils/storage';
+import { recordDetection } from '../utils/analyticsStore';
 import {detectScam} from '../utils/scamDetector';
 import type {RootStackParamList} from '../navigation/types';
 
@@ -22,6 +23,7 @@ const APP_ICONS: Record<string, string> = {
 const NAV_ITEMS: Array<{icon: string; label: string; screen: BottomNavScreen}> = [
   {icon: '🏠', label: 'Home', screen: 'Home'},
   {icon: '📋', label: 'History', screen: 'History'},
+  {icon: '📊', label: 'Analytics', screen: 'Analytics'},
   {icon: '⚙️', label: 'Settings', screen: 'Settings'},{icon: '🐞', label: 'Debug', screen: 'Debug'},
 ];
 
@@ -61,8 +63,6 @@ const HomeScreen = () => {
       const nativeCategory: string = data.matchedCategory || '';
 
       const jsResult = detectScam(data.text);
-
-      // Combine: native flag OR JS detector triggers warning
       const isScam = nativeFlagged || jsResult.isScam;
       const category = nativeFlagged && nativeCategory
         ? nativeCategory
@@ -70,6 +70,10 @@ const HomeScreen = () => {
       const confidence = nativeFlagged
         ? Math.max(jsResult.confidence, 85)
         : jsResult.confidence;
+
+      const categories = [nativeCategory, jsResult.category].filter(Boolean);
+
+      recordDetection(isScam, categories);
 
       console.log('[Aegis] native:', nativeFlagged, nativeCategory,
                   '| js:', jsResult.isScam, jsResult.category);

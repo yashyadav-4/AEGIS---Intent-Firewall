@@ -8,6 +8,7 @@ export type RootStackParamList = {
     threatId?: string;
   };
   History: undefined;
+  Analytics: undefined;
   Settings: undefined;
   Debug: undefined;
 };

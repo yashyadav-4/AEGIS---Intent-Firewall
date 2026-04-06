@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { NativeModules } from 'react-native';
+import { recordDetection } from '../utils/analyticsStore';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
 const { NotificationService } = NativeModules;
@@ -66,6 +67,10 @@ export const DebugScreen: React.FC = () => {
     try {
       if (testType === 'call') {
         const result = await NotificationService.simulateCall(input, true, 3000);
+        recordDetection(result.deepfakeDetected || result.keywordDetected, [
+            ...(result.deepfakeDetected ? ['DEEPFAKE'] : []),
+            ...(result.keywords || []),
+          ]);
         return {
           id,
           timestamp: new Date(),
@@ -80,6 +85,7 @@ export const DebugScreen: React.FC = () => {
         };
       } else {
         const result = await NotificationService.testDetection(input, testType);
+        recordDetection(result.detected, result.categories || []);
         return {
           id,
           timestamp: new Date(),
@@ -119,7 +125,7 @@ export const DebugScreen: React.FC = () => {
     for (const msg of messages) {
       const result = await runTest(msg);
       newResults.push(result);
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(() => resolve(null), 500));
     }
     setResults(prev => [...newResults, ...prev]);
     setIsRunning(false);
