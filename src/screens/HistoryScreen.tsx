@@ -1,111 +1,32 @@
-import React, {useState, useCallback, useEffect} from 'react';
+import React, {useState, useCallback} from 'react';
 import {
   View, Text, StyleSheet, StatusBar,
   ScrollView, TouchableOpacity,
-  DeviceEventEmitter,
 } from 'react-native';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
-import {
-  getThreats,
-  clearThreats,
-  getMessageEvents,
-  clearMessageEvents,
-  formatTime,
-  Threat,
-  MessageEvent,
-} from '../utils/storage';
-import {clearStoredMessages, getStoredMessages} from '../utils/nativeMessageStore';
+import {getThreats, clearThreats, Threat} from '../utils/storage';
 
 const FILTERS = ['All', 'WhatsApp', 'SMS', 'Calls'];
-const MESSAGE_FILTERS = ['All', 'WhatsApp', 'Telegram', 'SMS', 'Hidden'];
-const APP_ICONS: Record<string, string> = {
-  WhatsApp: '💬',
-  Telegram: '✈️',
-  SMS: '📱',
-  System: '⚙️',
-};
 
 const HistoryScreen = () => {
   const navigation = useNavigation();
-  const [activeTab, setActiveTab] = useState<'Threats' | 'Messages'>('Threats');
   const [activeFilter, setActiveFilter] = useState('All');
-  const [activeMessageFilter, setActiveMessageFilter] = useState('All');
   const [threats, setThreats] = useState<Threat[]>([]);
-  const [messages, setMessages] = useState<MessageEvent[]>([]);
 
   useFocusEffect(
     useCallback(() => {
       loadThreats();
-      loadMessages();
     }, [])
   );
-
-  useEffect(() => {
-    const sub = DeviceEventEmitter.addListener('onNotification', () => {
-      loadMessages();
-    });
-
-    return () => sub.remove();
-  }, []);
-
-  useEffect(() => {
-    if (activeTab !== 'Messages') {
-      return;
-    }
-
-    const timer = setInterval(() => {
-      loadMessages();
-    }, 2000);
-
-    return () => clearInterval(timer);
-  }, [activeTab]);
 
   const loadThreats = async () => {
     const data = await getThreats();
     setThreats(data);
   };
 
-  const loadMessages = async () => {
-    const [localData, nativeData] = await Promise.all([
-      getMessageEvents(),
-      getStoredMessages(),
-    ]);
-
-    const fromNative: MessageEvent[] = nativeData.map((item, index) => ({
-      id: `native-${item.timestamp}-${index}`,
-      app: item.appName || item.packageName || 'Unknown',
-      appIcon: APP_ICONS[item.appName] || '📩',
-      title: item.title || item.appName || 'Message',
-      message: item.text || '',
-      packageName: item.packageName || '',
-      matchedCategory: item.matchedCategory || '',
-      flagged: item.flagged === true,
-      time: formatTime(item.timestamp || Date.now()),
-      timestamp: item.timestamp || Date.now(),
-    }));
-
-    const merged = [...fromNative, ...localData]
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .reduce<MessageEvent[]>((acc, item) => {
-        const signature = `${item.packageName}|${item.title}|${item.message}|${item.timestamp}`;
-        if (acc.some(existing => `${existing.packageName}|${existing.title}|${existing.message}|${existing.timestamp}` === signature)) {
-          return acc;
-        }
-        acc.push(item);
-        return acc;
-      }, []);
-
-    setMessages(merged);
-  };
-
   const handleClearAll = async () => {
     await clearThreats();
     setThreats([]);
-  };
-
-  const handleClearMessages = async () => {
-    await Promise.all([clearMessageEvents(), clearStoredMessages()]);
-    setMessages([]);
   };
 
   const filtered = threats.filter(t =>
@@ -114,151 +35,61 @@ const HistoryScreen = () => {
     t.app === activeFilter
   );
 
-  const filteredMessages = messages.filter(m => {
-    if (activeMessageFilter === 'All') return true;
-    if (activeMessageFilter === 'Hidden') {
-      return (
-        m.matchedCategory === 'HIDDEN_BY_OS' ||
-        m.message.includes('[Hidden by Android privacy settings]')
-      );
-    }
-    return m.app === activeMessageFilter;
-  });
-
-  const getMessageChip = (item: MessageEvent) => {
-    if (item.matchedCategory === 'SMS_BROADCAST_DIRECT') return 'SMS Direct';
-    if (item.matchedCategory === 'HIDDEN_BY_OS') return 'Hidden';
-    if (item.matchedCategory === 'NO_PREVIEW') return 'No Preview';
-    return 'Notification';
-  };
-
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0D0D0D" />
 
       <View style={styles.header}>
         <Text style={styles.headerTitle}>📋 Threat History</Text>
-        <Text style={styles.headerSub}>
-          {activeTab === 'Threats'
-            ? `${threats.length} threats blocked total`
-            : `${messages.length} captured messages total`}
-        </Text>
+        <Text style={styles.headerSub}>{threats.length} threats blocked total</Text>
       </View>
 
-      <View style={styles.tabRow}>
-        {(['Threats', 'Messages'] as const).map(tab => (
+      <View style={styles.filterRow}>
+        {FILTERS.map(f => (
           <TouchableOpacity
-            key={tab}
-            style={[styles.tabPill, activeTab === tab && styles.tabPillActive]}
-            onPress={() => setActiveTab(tab)}>
-            <Text style={[styles.tabPillText, activeTab === tab && styles.tabPillTextActive]}>
-              {tab}
+            key={f}
+            style={[styles.filterTab, activeFilter === f && styles.filterTabActive]}
+            onPress={() => setActiveFilter(f)}>
+            <Text style={[styles.filterText, activeFilter === f && styles.filterTextActive]}>
+              {f}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {activeTab === 'Threats' ? (
-        <View style={styles.filterRow}>
-          {FILTERS.map(f => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.filterTab, activeFilter === f && styles.filterTabActive]}
-              onPress={() => setActiveFilter(f)}>
-              <Text style={[styles.filterText, activeFilter === f && styles.filterTextActive]}>
-                {f}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      ) : (
-        <View style={styles.filterRow}>
-          {MESSAGE_FILTERS.map(f => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.filterTab, activeMessageFilter === f && styles.filterTabActive]}
-              onPress={() => setActiveMessageFilter(f)}>
-              <Text style={[styles.filterText, activeMessageFilter === f && styles.filterTextActive]}>
-                {f}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-        {activeTab === 'Threats' ? (
-          <>
-            {filtered.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyIcon}>✅</Text>
-                <Text style={styles.emptyText}>No threats found</Text>
-                <Text style={styles.emptySubText}>You're all clear!</Text>
-              </View>
-            ) : (
-              filtered.map((threat) => (
-                <View key={threat.id} style={styles.threatCard}>
-                  <View style={styles.threatLeft}>
-                    <Text style={styles.threatAppIcon}>{threat.appIcon}</Text>
-                    <View>
-                      <Text style={styles.threatApp}>{threat.app}</Text>
-                      <Text style={styles.threatTime}>{threat.time}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.rightCol}>
-                    <View style={styles.threatBadge}>
-                      <Text style={styles.threatBadgeText}>{threat.category}</Text>
-                    </View>
-                    <Text style={[styles.status, threat.blocked ? styles.blocked : styles.allowed]}>
-                      {threat.blocked ? '🚫 Blocked' : '⚠️ Allowed'}
-                    </Text>
-                  </View>
-                </View>
-              ))
-            )}
-
-            {threats.length > 0 && (
-              <TouchableOpacity style={styles.dangerButton} onPress={handleClearAll}>
-                <Text style={styles.dangerText}>🗑️ Clear Threat History</Text>
-              </TouchableOpacity>
-            )}
-          </>
+        {filtered.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyIcon}>✅</Text>
+            <Text style={styles.emptyText}>No threats found</Text>
+            <Text style={styles.emptySubText}>You're all clear!</Text>
+          </View>
         ) : (
-          <>
-            {filteredMessages.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyIcon}>📭</Text>
-                <Text style={styles.emptyText}>No message events yet</Text>
-                <Text style={styles.emptySubText}>Incoming notifications will appear here.</Text>
-              </View>
-            ) : (
-              filteredMessages.map(item => (
-                <View key={item.id} style={styles.messageCard}>
-                  <View style={styles.messageHead}>
-                    <View style={styles.threatLeft}>
-                      <Text style={styles.threatAppIcon}>{item.appIcon}</Text>
-                      <View>
-                        <Text style={styles.threatApp}>{item.app}</Text>
-                        <Text style={styles.threatTime}>{formatTime(item.timestamp)}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.messageChip}>
-                      <Text style={styles.messageChipText}>{getMessageChip(item)}</Text>
-                    </View>
-                  </View>
-
-                  <Text style={styles.messageTitle}>{item.title || 'Unknown sender'}</Text>
-                  <Text style={styles.messageBody}>{item.message || '[Empty message]'}</Text>
+          filtered.map((threat) => (
+            <View key={threat.id} style={styles.threatCard}>
+              <View style={styles.threatLeft}>
+                <Text style={styles.threatAppIcon}>{threat.appIcon}</Text>
+                <View>
+                  <Text style={styles.threatApp}>{threat.app}</Text>
+                  <Text style={styles.threatTime}>{threat.time}</Text>
                 </View>
-              ))
-            )}
+              </View>
+              <View style={styles.rightCol}>
+                <View style={styles.threatBadge}>
+                  <Text style={styles.threatBadgeText}>{threat.category}</Text>
+                </View>
+                <Text style={[styles.status, threat.blocked ? styles.blocked : styles.allowed]}>
+                  {threat.blocked ? '🚫 Blocked' : '⚠️ Allowed'}
+                </Text>
+              </View>
+            </View>
+          ))
+        )}
 
-            {messages.length > 0 && (
-              <TouchableOpacity style={styles.dangerButton} onPress={handleClearMessages}>
-                <Text style={styles.dangerText}>🗑️ Clear Message History</Text>
-              </TouchableOpacity>
-            )}
-          </>
+        {threats.length > 0 && (
+          <TouchableOpacity style={styles.dangerButton} onPress={handleClearAll}>
+            <Text style={styles.dangerText}>🗑️ Clear All History</Text>
+          </TouchableOpacity>
         )}
 
         <View style={{height: 30}} />
@@ -293,30 +124,9 @@ const styles = StyleSheet.create({
   },
   headerTitle: {fontSize: 24, fontWeight: 'bold', color: '#fff'},
   headerSub: {fontSize: 12, color: '#A0AEC0', marginTop: 2},
-  tabRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 6,
-    backgroundColor: '#1A1A2E',
-    gap: 8,
-  },
-  tabPill: {
-    flex: 1,
-    borderRadius: 999,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#2D3748',
-    backgroundColor: '#141E35',
-  },
-  tabPillActive: {backgroundColor: '#E63946', borderColor: '#E63946'},
-  tabPillText: {fontSize: 12, color: '#A0AEC0', fontWeight: '700'},
-  tabPillTextActive: {color: '#fff'},
   filterRow: {
     flexDirection: 'row', paddingHorizontal: 20,
     paddingVertical: 12, backgroundColor: '#1A1A2E', gap: 8,
-    flexWrap: 'wrap',
   },
   filterTab: {
     paddingHorizontal: 16, paddingVertical: 6,
@@ -340,44 +150,6 @@ const styles = StyleSheet.create({
   threatApp: {fontSize: 14, fontWeight: '600', color: '#fff'},
   threatTime: {fontSize: 11, color: '#A0AEC0', marginTop: 2},
   rightCol: {alignItems: 'flex-end', gap: 4},
-  messageCard: {
-    backgroundColor: '#16213E',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#2D3748',
-  },
-  messageHead: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  messageChip: {
-    backgroundColor: '#2B3550',
-    borderWidth: 1,
-    borderColor: '#4A5A88',
-    borderRadius: 999,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-  },
-  messageChipText: {
-    color: '#D6E4FF',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  messageTitle: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  messageBody: {
-    color: '#D0D7E7',
-    fontSize: 12,
-    lineHeight: 18,
-  },
   threatBadge: {
     backgroundColor: '#E6394620', borderRadius: 6,
     paddingHorizontal: 8, paddingVertical: 4,

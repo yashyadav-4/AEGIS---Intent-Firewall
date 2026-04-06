@@ -22,7 +22,6 @@ const SettingsScreen = () => {
   const [permissions, setPermissions] = useState<PermissionSnapshot>({
     recordAudio: false,
     readPhoneState: false,
-    receiveSms: false,
     postNotifications: true,
   });
 
@@ -68,7 +67,7 @@ const SettingsScreen = () => {
     const result = await requestRequiredPermissions();
     setPermissions(result);
 
-    if (result.recordAudio && result.readPhoneState && result.receiveSms && result.postNotifications) {
+    if (result.recordAudio && result.readPhoneState && result.postNotifications) {
       Alert.alert('Permissions ready', 'All required runtime permissions are granted.');
       return;
     }
@@ -138,10 +137,6 @@ const SettingsScreen = () => {
           <View style={styles.permissionRow}>
             <Text style={styles.permissionLabel}>Phone State</Text>
             {statusChip(permissions.readPhoneState)}
-          </View>
-          <View style={styles.permissionRow}>
-            <Text style={styles.permissionLabel}>Receive SMS</Text>
-            {statusChip(permissions.receiveSms)}
           </View>
           <View style={styles.permissionRow}>
             <Text style={styles.permissionLabel}>Notifications</Text>

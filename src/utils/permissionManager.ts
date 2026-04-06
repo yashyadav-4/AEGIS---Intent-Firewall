@@ -3,7 +3,6 @@ import {Linking, PermissionsAndroid, Platform} from 'react-native';
 export type PermissionSnapshot = {
   recordAudio: boolean;
   readPhoneState: boolean;
-  receiveSms: boolean;
   postNotifications: boolean;
 };
 
@@ -15,7 +14,6 @@ const getRuntimePermissionList = (): string[] => {
   const list: string[] = [
     PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
     PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
-    PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
   ];
 
   if (Platform.Version >= 33) {
@@ -30,7 +28,6 @@ export const getPermissionSnapshot = async (): Promise<PermissionSnapshot> => {
     return {
       recordAudio: true,
       readPhoneState: true,
-      receiveSms: true,
       postNotifications: true,
     };
   }
@@ -40,9 +37,6 @@ export const getPermissionSnapshot = async (): Promise<PermissionSnapshot> => {
   );
   const readPhoneState = await PermissionsAndroid.check(
     PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
-  );
-  const receiveSms = await PermissionsAndroid.check(
-    PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
   );
 
   const postNotifications =
@@ -55,7 +49,6 @@ export const getPermissionSnapshot = async (): Promise<PermissionSnapshot> => {
   return {
     recordAudio,
     readPhoneState,
-    receiveSms,
     postNotifications,
   };
 };
@@ -65,7 +58,6 @@ export const requestRequiredPermissions = async (): Promise<PermissionSnapshot> 
     return {
       recordAudio: true,
       readPhoneState: true,
-      receiveSms: true,
       postNotifications: true,
     };
   }

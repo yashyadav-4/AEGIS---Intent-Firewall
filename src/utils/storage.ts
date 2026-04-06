@@ -12,19 +12,6 @@ export interface Threat {
   timestamp: number;
 }
 
-export interface MessageEvent {
-  id: string;
-  app: string;
-  appIcon: string;
-  title: string;
-  message: string;
-  packageName: string;
-  matchedCategory: string;
-  flagged: boolean;
-  time: string;
-  timestamp: number;
-}
-
 export interface Settings {
   autoBlock: boolean;
   strictMode: boolean;
@@ -35,9 +22,7 @@ export interface Settings {
 }
 
 const THREATS_KEY = 'threats';
-const MESSAGES_KEY = 'messages';
 const SETTINGS_KEY = 'settings';
-let messageWriteQueue: Promise<void> = Promise.resolve();
 
 const DEFAULT_SETTINGS: Settings = {
   autoBlock: false,
@@ -120,49 +105,4 @@ export const formatTime = (timestamp: number): string => {
   if (hours < 24) return `${hours} hours ago`;
   if (days === 1) return 'Yesterday';
   return `${days} days ago`;
-};
-
-// ─── Message Events ───────────────────────────────────
-
-export const saveMessageEvent = async (
-  event: Omit<MessageEvent, 'id' | 'timestamp'>,
-) => {
-  let savedEvent: MessageEvent | undefined;
-
-  messageWriteQueue = messageWriteQueue.then(async () => {
-    try {
-      const existing = await getMessageEvents();
-      const newEvent: MessageEvent = {
-        ...event,
-        id: Date.now().toString() + Math.random().toString(36).slice(2, 7),
-        timestamp: Date.now(),
-      };
-      const updated = [newEvent, ...existing].slice(0, 500);
-      await AsyncStorage.setItem(MESSAGES_KEY, JSON.stringify(updated));
-      savedEvent = newEvent;
-    } catch (e) {
-      console.error('Error saving message event:', e);
-    }
-  });
-
-  await messageWriteQueue;
-  return savedEvent;
-};
-
-export const getMessageEvents = async (): Promise<MessageEvent[]> => {
-  try {
-    const data = await AsyncStorage.getItem(MESSAGES_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch (e) {
-    console.error('Error getting message events:', e);
-    return [];
-  }
-};
-
-export const clearMessageEvents = async () => {
-  try {
-    await AsyncStorage.removeItem(MESSAGES_KEY);
-  } catch (e) {
-    console.error('Error clearing message events:', e);
-  }
 };

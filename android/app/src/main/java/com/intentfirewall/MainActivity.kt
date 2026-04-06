@@ -9,11 +9,6 @@ class MainActivity : ReactActivity() {
 
   override fun getMainComponentName(): String = "IntentFirewall"
 
-  override fun onResume() {
-      super.onResume()
-      NotificationEventEmitter.flushPending(this)
-  }
-
   override fun createReactActivityDelegate(): ReactActivityDelegate =
       DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
 }

@@ -82,15 +82,15 @@ android {
         applicationId "com.intentfirewall"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 3
-        versionName "3.0"
+        versionCode 1
+        versionName "2.0"
         ndk {
             abiFilters "arm64-v8a", "armeabi-v7a"
         }
     }
     applicationVariants.all { variant ->
         variant.outputs.all {
-            outputFileName = "intent-firewall-v3.apk"
+            outputFileName = "intent-firewall-v2.apk"
         }
     }
     signingConfigs {
