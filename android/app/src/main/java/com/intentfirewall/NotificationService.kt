@@ -25,7 +25,9 @@ class NotificationService : NotificationListenerService() {
             "com.whatsapp.w4b",
             "org.telegram.messenger",
             "com.android.mms",
-            "com.google.android.apps.messaging"
+            "com.google.android.apps.messaging",
+            "com.samsung.android.messaging",
+            "com.truecaller"
         )
 
         if (packageName in trackedApps && text.isNotEmpty()) {
@@ -34,19 +36,41 @@ class NotificationService : NotificationListenerService() {
             val context = ContextBuffer.getContext(packageName)
 
             // Tier 1 — Regex Sentinel (~0.1ms)
+            var finalFlagged = false
+            var finalCategory = ""
+            var waitTier3 = false
+
             val sentinelResult = RegexSentinel.analyze(text)
+            if (sentinelResult.flagged) {
+                finalFlagged = true
+                finalCategory = sentinelResult.matchedCategory ?: "REGEX_TRIGGER"
+                waitTier3 = true
+            } else {
+                // Check Hinglish
+                val hinglishResult = RegexSentinel.detectHinglishScam(text)
+                android.util.Log.d("IntentFirewall|HINGLISH", "HinglishScamResult: detected=${hinglishResult.detected}, confidence=${hinglishResult.confidence}")
+                if (hinglishResult.detected) {
+                    if (hinglishResult.confidence > 0.85f) {
+                        android.util.Log.i("IntentFirewall|HINGLISH", "Escalation: immediateWarning=true, waitTier3=false")
+                        finalFlagged = true
+                        finalCategory = hinglishResult.categories.firstOrNull() ?: "HINGLISH_SCAM"
+                    } else if (hinglishResult.confidence > 0.7f) {
+                        android.util.Log.i("IntentFirewall|HINGLISH", "Escalation: immediateWarning=false, waitTier3=true")
+                        waitTier3 = true
+                    }
+                }
+            }
 
             // Tier 2 — DistilBERT keyword classifier
             val tier2Result = Tier2Classifier(applicationContext).analyze(
                 context.ifEmpty { text }
             )
 
-            // Tier 3 — escalate only if Tier 1 OR Tier 2 flagged
-            val tier3Flagged = if (sentinelResult.flagged || tier2Result.isScam) {
-                // Use Tier 1 sentinel result as proxy feature vector
-                // (real implementation feeds DistilBERT hidden states)
+            // Tier 3 — escalate
+            val tier3Flagged = if (waitTier3 || tier2Result.isScam) {
+                // Use Tier 1 / Tier 2 result as proxy feature vector
                 val proxyFeatures = FloatArray(768) {
-                    if (sentinelResult.flagged) 0.8f else tier2Result.confidence
+                    if (finalFlagged) 0.8f else tier2Result.confidence
                 }
                 val tier3Result = tier3.analyze(proxyFeatures)
                 Log.d("AegisZero", "[T3] score=${tier3Result.confidence} " +
@@ -55,9 +79,9 @@ class NotificationService : NotificationListenerService() {
             } else false
 
             // Final combined flag
-            val finalFlagged = sentinelResult.flagged || tier2Result.isScam || tier3Flagged
+            finalFlagged = finalFlagged || tier2Result.isScam || tier3Flagged
 
-            // Always forward to React Native layer with sentinel result
+            // Always forward to React Native layer
             NotificationEventEmitter.sendNotification(
                 applicationContext,
                 appName,
@@ -68,14 +92,14 @@ class NotificationService : NotificationListenerService() {
                 when {
                     tier3Flagged -> "AI_CONFIRMED"
                     tier2Result.isScam -> tier2Result.label
-                    sentinelResult.flagged -> sentinelResult.matchedCategory ?: ""
+                    finalCategory.isNotEmpty() -> finalCategory
                     else -> ""
                 },
                 context
             )
 
             Log.d("AegisZero", "[PIPELINE] ${appName}: " +
-                  "T1=${sentinelResult.flagged} " +
+                  "T1Flagged=${finalFlagged} " +
                   "T2=${tier2Result.isScam}(${tier2Result.confidence}) " +
                   "T3=$tier3Flagged final=$finalFlagged")
         }
@@ -87,7 +111,9 @@ class NotificationService : NotificationListenerService() {
         return when (packageName) {
             "com.whatsapp", "com.whatsapp.w4b" -> "WhatsApp"
             "org.telegram.messenger" -> "Telegram"
-            "com.android.mms", "com.google.android.apps.messaging" -> "SMS"
+            "com.android.mms", "com.google.android.apps.messaging",
+            "com.samsung.android.messaging",
+            "com.truecaller" -> "SMS"
             else -> "Unknown"
         }
     }

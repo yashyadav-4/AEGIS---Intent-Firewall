@@ -36,6 +36,7 @@ const DEFAULT_SETTINGS: Settings = {
 // ─── Threats ───────────────────────────────────────────
 
 export const saveThreat = async (threat: Omit<Threat, 'id' | 'timestamp'>) => {
+  console.log("[saveThreat] saving threat:", threat);
   try {
     const existing = await getThreats();
     const newThreat: Threat = {
@@ -66,6 +67,16 @@ export const clearThreats = async () => {
     await AsyncStorage.removeItem(THREATS_KEY);
   } catch (e) {
     console.error('Error clearing threats:', e);
+  }
+};
+
+export const updateThreatBlocked = async (id: string, blocked = true) => {
+  try {
+    const existing = await getThreats();
+    const updated = existing.map(t => (t.id === id ? {...t, blocked} : t));
+    await AsyncStorage.setItem(THREATS_KEY, JSON.stringify(updated));
+  } catch (e) {
+    console.error('Error updating threat blocked state:', e);
   }
 };
 

@@ -1,0 +1,60 @@
+{
+  "results": [
+    {
+      "name": "Morgan Freeman Deepfake (YouTube)",
+      "kind": "online_deepfake",
+      "path": "evaluation/samples/morgan_deepfake_RsRZ_expsG4.wav",
+      "phase_score": 0.55859375,
+      "glottal_score": 0.26953125,
+      "wavlm_score": 0.5234375,
+      "ensemble_score": 0.5,
+      "fallback_score": 0.55859375,
+      "used_fallback": true,
+      "decision_threshold": 0.55,
+      "final_score": 0.55859375,
+      "is_synthetic": true
+    },
+    {
+      "name": "Morgan Freeman Deepfake #2 (YouTube)",
+      "kind": "online_deepfake",
+      "path": "evaluation/samples/morgan_deepfake2_oxXpB9pSETo.wav",
+      "phase_score": 0.6328125,
+      "glottal_score": 0.44921875,
+      "wavlm_score": 0.5703125,
+      "ensemble_score": 0.5,
+      "fallback_score": 0.626953125,
+      "used_fallback": true,
+      "decision_threshold": 0.55,
+      "final_score": 0.626953125,
+      "is_synthetic": true
+    },
+    {
+      "name": "Morgan Freeman Clip (Likely Real)",
+      "kind": "online_real_clip",
+      "path": "evaluation/samples/morgan_real_Y5iENTEkZTM.wav",
+      "phase_score": 0.37890625,
+      "glottal_score": 0.60546875,
+      "wavlm_score": 0.55859375,
+      "ensemble_score": 0.5,
+      "fallback_score": 0.5093749999999999,
+      "used_fallback": true,
+      "decision_threshold": 0.55,
+      "final_score": 0.5093749999999999,
+      "is_synthetic": false
+    },
+    {
+      "name": "Spoof Call (macOS TTS Samantha)",
+      "kind": "local_tts_spoof",
+      "path": "evaluation/samples/spoof_call_samantha.aiff",
+      "phase_score": 0.6328125,
+      "glottal_score": 0.75390625,
+      "wavlm_score": 0.625,
+      "ensemble_score": 0.5,
+      "fallback_score": 0.6902343750000001,
+      "used_fallback": true,
+      "decision_threshold": 0.55,
+      "final_score": 0.6902343750000001,
+      "is_synthetic": true
+    }
+  ]
+}
