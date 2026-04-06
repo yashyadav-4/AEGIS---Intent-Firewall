@@ -1,8 +1,13 @@
 import React from 'react';
 import AppNavigator from './src/navigation/AppNavigator';
+import ErrorBoundary from './src/utils/errorBoundary';
 
 const App = () => {
-  return <AppNavigator />;
+  return (
+    <ErrorBoundary>
+      <AppNavigator />
+    </ErrorBoundary>
+  );
 };
 
 export default App; 

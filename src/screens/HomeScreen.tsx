@@ -22,7 +22,7 @@ const APP_ICONS: Record<string, string> = {
 const NAV_ITEMS: Array<{icon: string; label: string; screen: BottomNavScreen}> = [
   {icon: '🏠', label: 'Home', screen: 'Home'},
   {icon: '📋', label: 'History', screen: 'History'},
-  {icon: '⚙️', label: 'Settings', screen: 'Settings'},
+  {icon: '⚙️', label: 'Settings', screen: 'Settings'},{icon: '🐞', label: 'Debug', screen: 'Debug'},
 ];
 
 const HomeScreen = () => {
@@ -31,14 +31,21 @@ const HomeScreen = () => {
   const [callProtection, setCallProtection] = useState(false);
   const [recentThreats, setRecentThreats] = useState<Threat[]>([]);
   const [isProtected, setIsProtected] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
-      const s = await getSettings();
-      setMessageProtection(s.messageProtection);
-      setCallProtection(s.callProtection);
-      setIsProtected(s.messageProtection || s.callProtection);
-      loadRecentThreats();
+      try {
+        const s = await getSettings();
+        setMessageProtection(s.messageProtection);
+        setCallProtection(s.callProtection);
+        setIsProtected(s.messageProtection || s.callProtection);
+        await loadRecentThreats();
+      } catch (err) {
+        console.error('Error loading settings', err);
+      } finally {
+        setIsLoading(false);
+      }
     };
     load();
   }, []);
@@ -96,8 +103,12 @@ const HomeScreen = () => {
   }, [navigation]);
 
   const loadRecentThreats = async () => {
-    const all = await getThreats();
-    setRecentThreats(all.slice(0, 3));
+    try {
+      const all = await getThreats();
+      setRecentThreats(all.slice(0, 3));
+    } catch (err) {
+      console.error('Error loading threats', err);
+    }
   };
 
   const simulateAttack = async () => {
@@ -144,6 +155,14 @@ const HomeScreen = () => {
     setIsProtected(messageProtection || val);
     await saveSettings({callProtection: val});
   };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, {justifyContent: 'center', alignItems: 'center'}]}>
+        <Text style={{color: '#fff'}}>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

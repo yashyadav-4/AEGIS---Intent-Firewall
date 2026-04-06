@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "name": "Morgan Deepfake #1",
+      "path": "evaluation/samples/morgan_deepfake_RsRZ_expsG4.wav",
+      "kind": "online_deepfake",
+      "phase_score": 0.55859375,
+      "glottal_score": 0.26953125,
+      "wavlm_score": 0.5234375,
+      "ensemble_score": 0.5,
+      "is_synthetic": false
+    },
+    {
+      "name": "Morgan Deepfake #2",
+      "path": "evaluation/samples/morgan_deepfake2_oxXpB9pSETo.wav",
+      "kind": "online_deepfake",
+      "phase_score": 0.6328125,
+      "glottal_score": 0.44921875,
+      "wavlm_score": 0.5703125,
+      "ensemble_score": 0.5,
+      "is_synthetic": false
+    },
+    {
+      "name": "Morgan Real Clip",
+      "path": "evaluation/samples/morgan_real_Y5iENTEkZTM.wav",
+      "kind": "online_real_clip",
+      "phase_score": 0.37890625,
+      "glottal_score": 0.60546875,
+      "wavlm_score": 0.55859375,
+      "ensemble_score": 0.5,
+      "is_synthetic": false
+    },
+    {
+      "name": "Spoof Call Samantha TTS",
+      "path": "evaluation/samples/spoof_call_samantha.aiff",
+      "kind": "local_tts_spoof",
+      "phase_score": 0.6328125,
+      "glottal_score": 0.75390625,
+      "wavlm_score": 0.625,
+      "ensemble_score": 0.5,
+      "is_synthetic": false
+    }
+  ]
+}

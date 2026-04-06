@@ -9,6 +9,19 @@ object RegexSentinel {
         val matchedPattern: String?
     )
 
+    data class RegexMatch(
+        val pattern: String,
+        val value: String,
+        val index: Int
+    )
+
+    data class HinglishScamResult(
+        val detected: Boolean,
+        val categories: List<String>,
+        val confidence: Float,
+        val matches: Map<String, List<RegexMatch>>
+    )
+
     private data class CompiledPattern(
         val category: String,
         val pattern: String,
@@ -87,6 +100,64 @@ object RegexSentinel {
         CompiledPattern("IMPERSONATION", "\\bcustoms.*package\\b", Regex("\\bcustoms.*package\\b", RegexOption.IGNORE_CASE)),
     )
 
+    private val HINGLISH_SCAM_PATTERNS = mapOf(
+        // === CREDENTIAL HARVEST ===
+        "OTP_HARVEST_HINGLISH" to listOf(
+            Regex("""otp\s*(batao|share karo|bolo|dedo|bhejo)""", RegexOption.IGNORE_CASE),
+            Regex("""(apna|aapka)\s*(pin|password|otp)\s*(batao|dedo|share)""", RegexOption.IGNORE_CASE),
+            Regex("""one\s*time\s*password\s*(share|send|give)""", RegexOption.IGNORE_CASE),
+        ),
+
+        // === AUTHORITY IMPERSONATION ===
+        "AUTHORITY_HINDI" to listOf(
+            Regex("""(mai|main|hum)\s*(cbi|ed|rbi|trai|income tax|cyber crime)\s*(se|officer|department)""", RegexOption.IGNORE_CASE),
+            Regex("""(aapke|aapka)\s*(upar|against)\s*(case|fir|complaint)\s*(darj|file|register)""", RegexOption.IGNORE_CASE),
+            Regex("""(arrest|giraftaar)\s*(ho|kar|hoge|honge)""", RegexOption.IGNORE_CASE),
+            Regex("""digital\s*(arrest|giraftaari)""", RegexOption.IGNORE_CASE),
+        ),
+
+        // === URGENCY TRIGGERS ===
+        "URGENCY_HINGLISH" to listOf(
+            Regex("""(abhi|turant|foran|jaldi)\s*(transfer|payment|pay|bhejo|karo)""", RegexOption.IGNORE_CASE),
+            Regex("""(2|do|ek|1)\s*(ghante|hour|minute)\s*(mein|me|andar)\s*(band|block|suspend)""", RegexOption.IGNORE_CASE),
+            Regex("""(account|sim|number)\s*(band|block|suspend)\s*(ho\s*jayega|kar\s*denge)""", RegexOption.IGNORE_CASE),
+        ),
+
+        // === FINANCIAL PRESSURE ===
+        "FINANCIAL_HINGLISH" to listOf(
+            Regex("""(upi|phonepay|gpay|paytm)\s*(pin|id|number)\s*(batao|share|dedo)""", RegexOption.IGNORE_CASE),
+            Regex("""(apne|aapka)\s*(account|khata)\s*(se|mein)\s*(transfer|bhejo|nikalo)""", RegexOption.IGNORE_CASE),
+            Regex("""(processing|registration|customs|duty)\s*(fee|charge|amount)\s*(pay|jama|bhejo)""", RegexOption.IGNORE_CASE),
+        ),
+
+        // === KYC / VERIFICATION SCAM ===
+        "KYC_SCAM_HINGLISH" to listOf(
+            Regex("""(aapka|apna)\s*kyc\s*(expired|expire|update|verify|karna\s*hai)""", RegexOption.IGNORE_CASE),
+            Regex("""kyc\s*(nahi|na)\s*(kiya|karaya)\s*(toh|to)\s*(band|block)""", RegexOption.IGNORE_CASE),
+        ),
+
+        // === PARCEL / CUSTOMS SCAM ===
+        "CUSTOMS_SCAM_HINGLISH" to listOf(
+            Regex("""(aapka|apna)\s*(parcel|package|courier)\s*(customs|airport)\s*(mein|par)\s*(ruka|held|seized)""", RegexOption.IGNORE_CASE),
+        ),
+
+        // === REMOTE ACCESS TRAP ===
+        "REMOTE_ACCESS_HINGLISH" to listOf(
+            Regex("""(anydesk|teamviewer|quicksupport)\s*(app|application)\s*(install|download|karo)""", RegexOption.IGNORE_CASE),
+            Regex("""(screen|mobile)\s*(share karo|dikhaao|on karo)""", RegexOption.IGNORE_CASE),
+        ),
+    )
+
+    private val CATEGORY_WEIGHTS = mapOf(
+        "OTP_HARVEST_HINGLISH" to 0.9f,      // Highest risk — credentials
+        "AUTHORITY_HINDI" to 0.8f,           // Fake authority
+        "REMOTE_ACCESS_HINGLISH" to 0.85f,   // Screen sharing = theft
+        "KYC_SCAM_HINGLISH" to 0.75f,
+        "CUSTOMS_SCAM_HINGLISH" to 0.7f,
+        "URGENCY_HINGLISH" to 0.6f,
+        "FINANCIAL_HINGLISH" to 0.65f,
+    )
+
     fun analyze(text: String): SentinelResult {
         val normalized = text.lowercase()
 
@@ -101,5 +172,32 @@ object RegexSentinel {
         }
 
         return SentinelResult(false, null, null)
+    }
+
+    fun detectHinglishScam(inputText: String): HinglishScamResult {
+        android.util.Log.d("IntentFirewall|HINGLISH", "Analyzing: '$inputText'")
+        val matches = mutableMapOf<String, List<RegexMatch>>()
+        var totalWeight = 0f
+
+        for ((category, patterns) in HINGLISH_SCAM_PATTERNS) {
+            val categoryMatches = patterns.mapNotNull { pattern ->
+                pattern.find(inputText)?.let { match ->
+                    RegexMatch(pattern = pattern.pattern, value = match.value, index = match.range.first)
+                }
+            }
+            if (categoryMatches.isNotEmpty()) {
+                android.util.Log.d("IntentFirewall|HINGLISH", "Hinglish: $category matched with ${categoryMatches.size} patterns")
+                matches[category] = categoryMatches
+                totalWeight += CATEGORY_WEIGHTS[category] ?: 0.1f
+            }
+        }
+
+        android.util.Log.d("IntentFirewall|HINGLISH", "Hinglish: Final confidence: ${kotlin.math.min(totalWeight, 1.0f)}, Categories: ${matches.keys.toList()}")
+        return HinglishScamResult(
+            detected = matches.isNotEmpty(),
+            categories = matches.keys.toList(),
+            confidence = kotlin.math.min(totalWeight, 1.0f),
+            matches = matches
+        )
     }
 }

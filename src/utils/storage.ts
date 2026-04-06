@@ -36,6 +36,7 @@ const DEFAULT_SETTINGS: Settings = {
 // ─── Threats ───────────────────────────────────────────
 
 export const saveThreat = async (threat: Omit<Threat, 'id' | 'timestamp'>) => {
+  console.log("[saveThreat] saving threat:", threat);
   try {
     const existing = await getThreats();
     const newThreat: Threat = {

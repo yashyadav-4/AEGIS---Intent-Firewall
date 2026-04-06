@@ -1,55 +1,68 @@
-import React, {useState, useEffect} from 'react';
-import {
-  View, Text, StyleSheet, StatusBar,
-  ScrollView, Switch, TouchableOpacity, Alert,
-} from 'react-native';
+import React, {useState, useEffect, useCallback} from 'react';
+import {Alert, View, Text, ScrollView, TouchableOpacity, Switch, StyleSheet, StatusBar} from 'react-native';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
-import {clearThreats, getSettings, saveSettings} from '../utils/storage';
 import {
-  getPermissionSnapshot,
-  requestRequiredPermissions,
-  openNotificationAccessSettings,
-  openAppPermissionSettings,
-  PermissionSnapshot,
+  getAllPermissionStatus,
+  PermissionStatus,
+  requestNotificationPermission,
+  promptNotificationListenerSetup,
+  requestCallScreeningPermission,
+  requestAudioRecordingPermission,
+  openPermissionSettings,
+  requestAllRequiredPermissions
 } from '../utils/permissionManager';
+import {getSettings, saveSettings, clearThreats} from '../utils/storage';
 
 const SettingsScreen = () => {
   const navigation = useNavigation();
+  const [permissions, setPermissions] = useState<PermissionStatus>({
+    notification: false,
+    notificationListener: false,
+    callScreening: false,
+    audioRecording: false,
+  });
+
   const [notifications, setNotifications] = useState(true);
   const [autoBlock, setAutoBlock] = useState(false);
   const [vibration, setVibration] = useState(true);
   const [strictMode, setStrictMode] = useState(false);
-  const [permissions, setPermissions] = useState<PermissionSnapshot>({
-    recordAudio: false,
-    readPhoneState: false,
-    postNotifications: true,
-  });
+  const [isLoading, setIsLoading] = useState(true);
 
-  const refreshPermissions = async () => {
-    const snapshot = await getPermissionSnapshot();
-    setPermissions(snapshot);
+  const loadPermissions = async () => {
+    try {
+      const status = await getAllPermissionStatus();
+      setPermissions(status);
+    } catch (error) {
+      console.error('Failed to load permissions:', error);
+    }
   };
 
-  // ─── Load saved settings on mount ──────────────────────
-  useEffect(() => {
-    const loadSettings = async () => {
-      const saved = await getSettings();
-      setAutoBlock(saved.autoBlock);
-      setStrictMode(saved.strictMode);
-      setNotifications(saved.notifications);
-      setVibration(saved.vibration);
-      await refreshPermissions();
-    };
-    loadSettings();
-  }, []);
-
   useFocusEffect(
-    React.useCallback(() => {
-      refreshPermissions();
-    }, []),
+    useCallback(() => {
+      loadPermissions();
+    }, [])
   );
 
-  // ─── Save a single setting when toggled ────────────────
+  useEffect(() => {
+    const loadSavedSettings = async () => {
+      try {
+        const saved = await getSettings();
+        if (saved) {
+          setAutoBlock(saved.autoBlock ?? false);
+          setStrictMode(saved.strictMode ?? false);
+          setNotifications(saved.notifications ?? true);
+          setVibration(saved.vibration ?? true);
+        }
+        await loadPermissions();
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadSavedSettings();
+  }, []);
+
   const handleToggle = async (
     key: 'autoBlock' | 'strictMode' | 'notifications' | 'vibration',
     value: boolean,
@@ -59,15 +72,11 @@ const SettingsScreen = () => {
     await saveSettings({[key]: value});
   };
 
-  const handleClearHistory = async () => {
-    await clearThreats();
-  };
-
   const handleRequestPermissions = async () => {
-    const result = await requestRequiredPermissions();
+    const result = await requestAllRequiredPermissions();
     setPermissions(result);
 
-    if (result.recordAudio && result.readPhoneState && result.postNotifications) {
+    if (result.audioRecording && result.callScreening && result.notification) {
       Alert.alert('Permissions ready', 'All required runtime permissions are granted.');
       return;
     }
@@ -78,11 +87,28 @@ const SettingsScreen = () => {
     );
   };
 
+  const handleClearHistory = async () => {
+    try {
+      if (clearThreats) await clearThreats();
+      Alert.alert('Cleared', 'History has been cleared.');
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   const statusChip = (granted: boolean) => (
     <View style={[styles.statusChip, granted ? styles.grantedChip : styles.missingChip]}>
       <Text style={styles.statusChipText}>{granted ? 'Granted' : 'Missing'}</Text>
     </View>
   );
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, {justifyContent: 'center', alignItems: 'center'}]}>
+        <Text style={{color: '#fff'}}>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -94,9 +120,7 @@ const SettingsScreen = () => {
       </View>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-
         <Text style={styles.sectionTitle}>PROTECTION</Text>
-
         {[
           {
             label: 'Auto Block Threats',
@@ -129,21 +153,25 @@ const SettingsScreen = () => {
 
         <Text style={styles.sectionTitle}>PERMISSIONS</Text>
 
-        <View style={styles.permissionCard}>
+        <View style={styles.permissionCardBox}>
           <View style={styles.permissionRow}>
             <Text style={styles.permissionLabel}>Microphone</Text>
-            {statusChip(permissions.recordAudio)}
+            {statusChip(permissions.audioRecording)}
           </View>
           <View style={styles.permissionRow}>
-            <Text style={styles.permissionLabel}>Phone State</Text>
-            {statusChip(permissions.readPhoneState)}
+            <Text style={styles.permissionLabel}>Call Screening</Text>
+            {statusChip(permissions.callScreening)}
           </View>
           <View style={styles.permissionRow}>
             <Text style={styles.permissionLabel}>Notifications</Text>
-            {statusChip(permissions.postNotifications)}
+            {statusChip(permissions.notification)}
+          </View>
+          <View style={styles.permissionRow}>
+            <Text style={styles.permissionLabel}>Notification Listener</Text>
+            {statusChip(permissions.notificationListener)}
           </View>
           <Text style={styles.permissionHint}>
-            Notification Access is a special Android setting. Use the button below and enable Intent Firewall.
+            Notification Access is a special Android setting needed for reading OTPs.
           </Text>
         </View>
 
@@ -153,13 +181,13 @@ const SettingsScreen = () => {
 
         <TouchableOpacity
           style={styles.actionButtonSecondary}
-          onPress={openNotificationAccessSettings}>
-          <Text style={styles.actionTextSecondary}>Open Notification Access</Text>
+          onPress={promptNotificationListenerSetup}>
+          <Text style={styles.actionTextSecondary}>Open Notification Listener Access</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.actionButtonSecondary}
-          onPress={openAppPermissionSettings}>
+          onPress={openPermissionSettings}>
           <Text style={styles.actionTextSecondary}>Open App Permission Settings</Text>
         </TouchableOpacity>
 
@@ -205,9 +233,9 @@ const SettingsScreen = () => {
             social engineering attacks in real-time.
           </Text>
         </View>
-
-        <TouchableOpacity style={styles.dangerButton} onPress={handleClearHistory}>
-          <Text style={styles.dangerText}>🗑️ Clear All History</Text>
+        
+        <TouchableOpacity style={{marginTop: 20, padding: 15, backgroundColor: 'rgba(255,0,0,0.1)', borderRadius: 10, borderWidth: 1, borderColor: '#E63946'}} onPress={handleClearHistory}>
+          <Text style={{color: '#E63946', textAlign: 'center', fontWeight: 'bold'}}>🗑️ Clear All History</Text>
         </TouchableOpacity>
 
         <View style={{height: 30}} />
@@ -218,7 +246,7 @@ const SettingsScreen = () => {
         {[
           {icon: '🏠', label: 'Home', screen: 'Home'},
           {icon: '📋', label: 'History', screen: 'History'},
-          {icon: '⚙️', label: 'Settings', screen: 'Settings'},
+          {icon: '⚙️', label: 'Settings', screen: 'Settings'},{icon: '🐞', label: 'Debug', screen: 'Debug'},
         ].map(item => (
           <TouchableOpacity
             key={item.label}
@@ -248,6 +276,7 @@ const styles = StyleSheet.create({
   headerTitle: {fontSize: 24, fontWeight: 'bold', color: '#fff'},
   headerSub: {fontSize: 12, color: '#A0AEC0', marginTop: 2},
   scroll: {flex: 1, paddingHorizontal: 20},
+  
   sectionTitle: {
     fontSize: 11, fontWeight: 'bold', color: '#A0AEC0',
     marginTop: 24, marginBottom: 12, letterSpacing: 1.5,
@@ -260,7 +289,7 @@ const styles = StyleSheet.create({
   settingLeft: {flex: 1},
   settingTitle: {fontSize: 15, fontWeight: '600', color: '#fff'},
   settingSub: {fontSize: 12, color: '#A0AEC0', marginTop: 2},
-  permissionCard: {
+  permissionCardBox: {
     backgroundColor: '#16213E', borderRadius: 12, padding: 16,
     marginBottom: 10, borderWidth: 1, borderColor: '#2D3748',
   },
@@ -300,45 +329,49 @@ const styles = StyleSheet.create({
   actionButton: {
     backgroundColor: '#E63946',
     borderRadius: 12,
-    padding: 14,
+    paddingVertical: 14,
     alignItems: 'center',
     marginBottom: 10,
   },
-  actionText: {color: '#fff', fontWeight: '700', fontSize: 14},
+  actionText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
   actionButtonSecondary: {
-    backgroundColor: '#1A1A2E',
+    backgroundColor: '#16213E',
     borderRadius: 12,
-    padding: 14,
+    paddingVertical: 14,
     alignItems: 'center',
     marginBottom: 10,
     borderWidth: 1,
     borderColor: '#2D3748',
   },
-  actionTextSecondary: {color: '#A0AEC0', fontWeight: '700', fontSize: 13},
+  actionTextSecondary: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
   aboutCard: {
-    backgroundColor: '#16213E', borderRadius: 12, padding: 20,
-    borderWidth: 1, borderColor: '#2D3748', alignItems: 'center',
+    backgroundColor: '#1A1A2E', borderRadius: 12, padding: 16,
+    borderWidth: 1, borderColor: '#2D3748', alignItems: 'center'
   },
-  aboutTitle: {fontSize: 20, fontWeight: 'bold', color: '#fff'},
-  aboutSub: {fontSize: 12, color: '#A0AEC0', marginTop: 4},
-  aboutDesc: {
-    fontSize: 12, color: '#A0AEC0', textAlign: 'center',
-    marginTop: 12, lineHeight: 18,
-  },
-  dangerButton: {
-    marginTop: 16, backgroundColor: '#2D0D0D', borderRadius: 12,
-    padding: 16, alignItems: 'center', borderWidth: 1, borderColor: '#E63946',
-  },
-  dangerText: {fontSize: 14, color: '#E63946', fontWeight: 'bold'},
+  aboutTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 4 },
+  aboutSub: { fontSize: 12, color: '#A0AEC0', marginBottom: 12 },
+  aboutDesc: { fontSize: 14, color: '#A0AEC0', textAlign: 'center', lineHeight: 20 },
   bottomNav: {
-    flexDirection: 'row', backgroundColor: '#1A1A2E',
-    borderTopWidth: 1, borderTopColor: '#2D3748',
-    paddingBottom: 20, paddingTop: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 16,
+    paddingBottom: 30, // iPhone spacing
+    backgroundColor: '#16213E',
+    borderTopWidth: 1,
+    borderTopColor: '#2D3748',
   },
-  navItem: {flex: 1, alignItems: 'center'},
-  navIcon: {fontSize: 22},
-  navLabel: {fontSize: 11, color: '#A0AEC0', marginTop: 4},
-  navLabelActive: {color: '#E63946', fontWeight: 'bold'},
+  navItem: {alignItems: 'center'},
+  navIcon: {fontSize: 20, marginBottom: 4},
+  navLabel: {fontSize: 10, color: '#888', fontWeight: '600'},
+  navLabelActive: {color: '#E63946'},
 });
 
 export default SettingsScreen;

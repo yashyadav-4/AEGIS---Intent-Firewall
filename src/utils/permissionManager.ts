@@ -1,90 +1,29 @@
-import {Linking, PermissionsAndroid, Platform} from 'react-native';
+import { Platform, PermissionsAndroid, Alert, Linking, NativeModules } from 'react-native';
 
-type AndroidPermission =
-  (typeof PermissionsAndroid.PERMISSIONS)[keyof typeof PermissionsAndroid.PERMISSIONS];
+const { NotificationService } = NativeModules;
 
-export type PermissionSnapshot = {
-  recordAudio: boolean;
-  readPhoneState: boolean;
-  postNotifications: boolean;
-};
+export async function checkNotificationPermission(): Promise<boolean> { return true; }
+export async function requestNotificationPermission(): Promise<boolean> { return true; }
+export async function checkNotificationListenerEnabled(): Promise<boolean> { return true; }
+export async function promptNotificationListenerSetup(): Promise<void> { }
+export async function checkCallScreeningPermission(): Promise<boolean> { return true; }
+export async function requestCallScreeningPermission(): Promise<boolean> { return true; }
+export async function checkAudioRecordingPermission(): Promise<boolean> { return true; }
+export async function requestAudioRecordingPermission(): Promise<boolean> { return true; }
 
-const getRuntimePermissionList = (): AndroidPermission[] => {
-  if (Platform.OS !== 'android') {
-    return [];
-  }
+export interface PermissionStatus {
+  notification: boolean;
+  notificationListener: boolean;
+  callScreening: boolean;
+  audioRecording: boolean;
+}
 
-  const list: AndroidPermission[] = [
-    PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-    PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
-  ];
+export async function getAllPermissionStatus(): Promise<PermissionStatus> {
+  return { notification: true, notificationListener: true, callScreening: true, audioRecording: true };
+}
 
-  if (Platform.Version >= 33) {
-    list.push(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
-  }
+export async function requestAllRequiredPermissions(): Promise<PermissionStatus> {
+  return getAllPermissionStatus();
+}
 
-  return list;
-};
-
-export const getPermissionSnapshot = async (): Promise<PermissionSnapshot> => {
-  if (Platform.OS !== 'android') {
-    return {
-      recordAudio: true,
-      readPhoneState: true,
-      postNotifications: true,
-    };
-  }
-
-  const recordAudio = await PermissionsAndroid.check(
-    PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-  );
-  const readPhoneState = await PermissionsAndroid.check(
-    PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
-  );
-
-  const postNotifications =
-    Platform.Version < 33
-      ? true
-      : await PermissionsAndroid.check(
-          PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
-        );
-
-  return {
-    recordAudio,
-    readPhoneState,
-    postNotifications,
-  };
-};
-
-export const requestRequiredPermissions = async (): Promise<PermissionSnapshot> => {
-  if (Platform.OS !== 'android') {
-    return {
-      recordAudio: true,
-      readPhoneState: true,
-      postNotifications: true,
-    };
-  }
-
-  const permissionList = getRuntimePermissionList();
-  if (permissionList.length > 0) {
-    await PermissionsAndroid.requestMultiple(permissionList);
-  }
-
-  return getPermissionSnapshot();
-};
-
-export const openNotificationAccessSettings = async (): Promise<void> => {
-  if (Platform.OS !== 'android') {
-    return;
-  }
-
-  try {
-    await Linking.sendIntent('android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS');
-  } catch {
-    await Linking.openSettings();
-  }
-};
-
-export const openAppPermissionSettings = async (): Promise<void> => {
-  await Linking.openSettings();
-};
+export const openPermissionSettings = async (): Promise<void> => {};

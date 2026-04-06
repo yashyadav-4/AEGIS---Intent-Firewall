@@ -12,6 +12,7 @@ const HistoryScreen = () => {
   const navigation = useNavigation();
   const [activeFilter, setActiveFilter] = useState('All');
   const [threats, setThreats] = useState<Threat[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useFocusEffect(
     useCallback(() => {
@@ -20,13 +21,23 @@ const HistoryScreen = () => {
   );
 
   const loadThreats = async () => {
-    const data = await getThreats();
-    setThreats(data);
+    try {
+      const data = await getThreats();
+      setThreats(data || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleClearAll = async () => {
-    await clearThreats();
-    setThreats([]);
+    try {
+      await clearThreats();
+      setThreats([]);
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const filtered = threats.filter(t =>
@@ -34,6 +45,14 @@ const HistoryScreen = () => {
     activeFilter === 'Calls' ? t.app === 'Phone Call' :
     t.app === activeFilter
   );
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, {justifyContent: 'center', alignItems: 'center'}]}>
+        <Text style={{color: '#fff'}}>Loading history...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -99,7 +118,7 @@ const HistoryScreen = () => {
         {[
           {icon: '🏠', label: 'Home', screen: 'Home'},
           {icon: '📋', label: 'History', screen: 'History'},
-          {icon: '⚙️', label: 'Settings', screen: 'Settings'},
+          {icon: '⚙️', label: 'Settings', screen: 'Settings'},{icon: '🐞', label: 'Debug', screen: 'Debug'},
         ].map((item) => (
           <TouchableOpacity
             key={item.label}

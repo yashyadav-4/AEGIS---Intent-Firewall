@@ -9,4 +9,5 @@ export type RootStackParamList = {
   };
   History: undefined;
   Settings: undefined;
+  Debug: undefined;
 };

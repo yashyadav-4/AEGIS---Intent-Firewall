@@ -5,6 +5,7 @@ import HomeScreen from '../screens/HomeScreen';
 import WarningScreen from '../screens/WarningScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import { DebugScreen } from '../screens/DebugScreen';
 import {RootStackParamList} from './types';
 import {updateThreatBlocked} from '../utils/storage';
 
@@ -17,7 +18,7 @@ const WarningScreenWrapper = ({route, navigation}: WarningScreenProps) => {
     category = 'Suspicious Message',
     confidence = 85,
     threatId,
-  } = route.params;
+  } = route?.params || {};
 
   return (
     <WarningScreen
@@ -49,6 +50,7 @@ const AppNavigator = () => {
         <Stack.Screen name="Warning" component={WarningScreenWrapper} />
         <Stack.Screen name="History" component={HistoryScreen} />
         <Stack.Screen name="Settings" component={SettingsScreen} />
+        <Stack.Screen name="Debug" component={DebugScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

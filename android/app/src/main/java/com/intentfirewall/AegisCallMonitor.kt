@@ -258,12 +258,28 @@ class AegisCallMonitor : Service() {
                     val window = accumulator.copyOf(WINDOW_SAMPLES)
 
                     val pitchVar = computePitchVariance(window)
-                    detector?.onSpectralEnergyUpdate(pitchVar)
+                    val zcr = computeZeroCrossingRate(window)
+                    val spectralGap = computeSpectralGapPlaceholder(window)
+                    
+                    // Simple multi-signal gating logic
+                    val zcrTrigger = zcr > 0.15f
+                    val gapTrigger = spectralGap > 0.8f
+                    val combinedSpectralScore = if (pitchVar < FLAT_PITCH_THRESHOLD || zcrTrigger || gapTrigger) 0.0f else 1.0f
+
+                    detector?.onSpectralEnergyUpdate(combinedSpectralScore)
 
                     if (detector?.shouldActivate() == true) {
                         serviceScope.launch(Dispatchers.Default) {
-                            val result = detector?.analyze(window)
-                            result?.let { onDetectionResult(it) }
+                            try {
+                                Log.d("IntentFirewall", "Starting audio detection analysis")
+                                val result = detector?.analyze(window)
+                                result?.let { 
+                                    onDetectionResult(it) 
+                                    Log.d("IntentFirewall", "Audio detection complete: synthetic=${it.isSynthetic} conf=${it.confidence}")
+                                }
+                            } catch (e: Exception) {
+                                Log.e("IntentFirewall", "Audio detection failed: ${e.message}", e)
+                            }
                         }
                     }
 
@@ -339,6 +355,22 @@ class AegisCallMonitor : Service() {
         variance /= energies.size
 
         return variance / (mean * mean)
+    }
+
+    private fun computeZeroCrossingRate(window: FloatArray): Float {
+        if (window.isEmpty()) return 0f
+        var crossings = 0
+        for (i in 1 until window.size) {
+            if ((window[i] > 0 && window[i - 1] <= 0) || (window[i] <= 0 && window[i - 1] > 0)) {
+                crossings++
+            }
+        }
+        return crossings.toFloat() / window.size
+    }
+
+    private fun computeSpectralGapPlaceholder(window: FloatArray): Float {
+        // Placeholder for advanced multi-signal logic (e.g. evaluating high-frequency spectral artifacts)
+        return 0.1f // Default safe value
     }
 
     private fun onDetectionResult(result: DetectionResult) {
