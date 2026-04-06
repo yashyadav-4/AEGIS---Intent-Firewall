@@ -6,10 +6,7 @@ import {
   TouchableOpacity,
   Animated,
   StatusBar,
-  Dimensions,
 } from 'react-native';
-
-const {width} = Dimensions.get('window');
 
 type Props = {
   category?: string;
@@ -60,7 +57,7 @@ const WarningScreen = ({
         }),
       ]),
     ).start();
-  }, []);
+  }, [fadeAnim, pulseAnim, slideAnim]);
 
   return (
     <Animated.View

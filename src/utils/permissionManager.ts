@@ -1,17 +1,20 @@
 import {Linking, PermissionsAndroid, Platform} from 'react-native';
 
+type AndroidPermission =
+  (typeof PermissionsAndroid.PERMISSIONS)[keyof typeof PermissionsAndroid.PERMISSIONS];
+
 export type PermissionSnapshot = {
   recordAudio: boolean;
   readPhoneState: boolean;
   postNotifications: boolean;
 };
 
-const getRuntimePermissionList = (): string[] => {
+const getRuntimePermissionList = (): AndroidPermission[] => {
   if (Platform.OS !== 'android') {
     return [];
   }
 
-  const list: string[] = [
+  const list: AndroidPermission[] = [
     PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
     PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
   ];
@@ -77,7 +80,7 @@ export const openNotificationAccessSettings = async (): Promise<void> => {
 
   try {
     await Linking.sendIntent('android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS');
-  } catch (_error) {
+  } catch {
     await Linking.openSettings();
   }
 };

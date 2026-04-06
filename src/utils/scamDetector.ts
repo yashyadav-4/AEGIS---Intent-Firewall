@@ -51,7 +51,7 @@ export const detectScam = (text: string): ScamResult => {
   const matched: string[] = [];
   let score = 0;
 
-  const check = (keywords: string[], weight: number, cat: string) => {
+  const check = (keywords: string[], weight: number) => {
     keywords.forEach(kw => {
       if (lower.includes(kw)) {
         matched.push(kw);
@@ -60,11 +60,11 @@ export const detectScam = (text: string): ScamResult => {
     });
   };
 
-  check(URGENCY_FINANCIAL, 15, 'Urgency/Financial');
-  check(OTP_PHISHING, 25, 'OTP Phishing');
-  check(AUTHORITY_SCAM, 20, 'Authority Scam');
-  check(IMPERSONATION, 10, 'Impersonation');
-  check(FINANCIAL_FRAUD, 15, 'Financial Fraud');
+  check(URGENCY_FINANCIAL, 15);
+  check(OTP_PHISHING, 25);
+  check(AUTHORITY_SCAM, 20);
+  check(IMPERSONATION, 10);
+  check(FINANCIAL_FRAUD, 15);
 
   const confidence = Math.min(score, 100);
   const isScam = confidence >= 25;
