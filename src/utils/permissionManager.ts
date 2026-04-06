@@ -3,129 +3,86 @@ import { Platform, PermissionsAndroid, Alert, Linking, NativeModules } from 'rea
 const { NotificationService } = NativeModules;
 
 export async function checkNotificationPermission(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-
-  if (Platform.Version >= 33) {
-    return PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+  if (Platform.OS === 'android') {
+    try {
+      return await NotificationService.checkNotificationPermission();
+    } catch {
+      return false;
+    }
   }
-
   return true;
 }
 
 export async function requestNotificationPermission(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-
-  if (Platform.Version >= 33) {
-    const result = await PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
-    );
-    return result === PermissionsAndroid.RESULTS.GRANTED;
+  if (Platform.OS === 'android') {
+    try {
+      return await NotificationService.requestNotificationPermission();
+    } catch {
+      return false;
+    }
   }
-
   return true;
 }
 
 export async function checkNotificationListenerEnabled(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-
-  if (NotificationService?.checkNotificationListenerEnabled) {
+  if (Platform.OS === 'android' && NotificationService.checkNotificationListenerEnabled) {
     try {
       return await NotificationService.checkNotificationListenerEnabled();
-    } catch (error) {
-      console.warn('Native checkNotificationListenerEnabled failed:', error);
+    } catch {
+      return false;
     }
   }
-
   return false;
 }
 
 export async function promptNotificationListenerSetup(): Promise<void> {
-  if (Platform.OS !== 'android') return;
-
-  if (NotificationService?.promptNotificationListenerSetup) {
-    try {
-      await NotificationService.promptNotificationListenerSetup();
-      return;
-    } catch (error) {
-      console.warn('Native promptNotificationListenerSetup failed:', error);
-    }
+  if (Platform.OS === 'android') {
+    await NotificationService.promptNotificationListenerSetup();
   }
-
-  Alert.alert(
-    'Enable Notification Access',
-    'Please enable notification access for Intent Firewall.',
-    [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Open Settings',
-        onPress: () => Linking.openSettings().catch(() => {}),
-      },
-    ],
-  );
 }
 
 export async function checkCallScreeningPermission(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-
-  if (NotificationService?.checkCallScreeningPermission) {
+  if (Platform.OS === 'android' && NotificationService.checkCallScreeningPermission) {
     try {
       return await NotificationService.checkCallScreeningPermission();
-    } catch (error) {
-      console.warn('Native checkCallScreeningPermission failed:', error);
+    } catch {
+      return false;
     }
   }
-
   return false;
 }
 
-export async function requestCallScreeningPermission(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-
-  if (NotificationService?.requestCallScreeningPermission) {
+export async function requestCallScreeningPermission(): Promise<void> {
+  if (Platform.OS === 'android' && NotificationService.requestCallScreeningPermission) {
     try {
       await NotificationService.requestCallScreeningPermission();
-    } catch (error) {
-      console.warn('Native requestCallScreeningPermission failed:', error);
+    } catch (e) {
+      console.error(e);
     }
   }
-
-  return checkCallScreeningPermission();
-}
-
-export async function checkSmsPermission(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-  return PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECEIVE_SMS);
-}
-
-export async function requestSmsPermission(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-
-  const result = await PermissionsAndroid.request(
-    PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
-    {
-      title: 'SMS Access',
-      message: 'Intent Firewall needs SMS permission to capture SMS scam attempts.',
-      buttonPositive: 'Allow',
-      buttonNegative: 'Deny',
-    },
-  );
-
-  return result === PermissionsAndroid.RESULTS.GRANTED;
 }
 
 export async function checkAudioRecordingPermission(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-  return PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+  if (Platform.OS === 'android') {
+    const audio = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+    const phoneState = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE);
+    return audio && phoneState;
+  }
+  return true;
 }
 
 export async function requestAudioRecordingPermission(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-
-  const result = await PermissionsAndroid.request(
-    PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-  );
-
-  return result === PermissionsAndroid.RESULTS.GRANTED;
+  if (Platform.OS === 'android') {
+    const results = await PermissionsAndroid.requestMultiple([
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+      PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
+    ]);
+    return (
+      results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED &&
+      results[PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE] === PermissionsAndroid.RESULTS.GRANTED
+    );
+  }
+  return true;
 }
 
 export interface PermissionStatus {
@@ -133,46 +90,23 @@ export interface PermissionStatus {
   notificationListener: boolean;
   callScreening: boolean;
   audioRecording: boolean;
-  sms: boolean;
 }
 
 export async function getAllPermissionStatus(): Promise<PermissionStatus> {
-  const [notification, notificationListener, callScreening, audioRecording, sms] = await Promise.all([
-    checkNotificationPermission(),
-    checkNotificationListenerEnabled(),
-    checkCallScreeningPermission(),
-    checkAudioRecordingPermission(),
-    checkSmsPermission(),
-  ]);
-
-  return {
-    notification,
-    notificationListener,
-    callScreening,
-    audioRecording,
-    sms,
-  };
+  const notification = await checkNotificationPermission();
+  const notificationListener = await checkNotificationListenerEnabled();
+  const callScreening = await checkCallScreeningPermission();
+  const audioRecording = await checkAudioRecordingPermission();
+  return { notification, notificationListener, callScreening, audioRecording };
 }
 
 export async function requestAllRequiredPermissions(): Promise<PermissionStatus> {
-  // Trigger Android runtime dialogs in sequence from a single button tap.
+  const audioState = await requestAudioRecordingPermission();
   await requestNotificationPermission();
-  await requestAudioRecordingPermission();
-  await requestSmsPermission();
   await requestCallScreeningPermission();
-
-  const listenerEnabled = await checkNotificationListenerEnabled();
-  if (!listenerEnabled) {
-    await promptNotificationListenerSetup();
-  }
-
-  return getAllPermissionStatus();
+  return await getAllPermissionStatus();
 }
 
 export const openPermissionSettings = async (): Promise<void> => {
-  try {
-    await Linking.openSettings();
-  } catch (error) {
-    Alert.alert('Unable to open settings', 'Please open app settings manually.');
-  }
+  await Linking.openSettings();
 };

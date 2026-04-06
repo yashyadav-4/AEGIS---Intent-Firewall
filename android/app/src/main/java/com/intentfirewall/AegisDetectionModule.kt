@@ -27,9 +27,9 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
         if (regexResult.matchedCategory != null) categories.add(regexResult.matchedCategory)
         categories.addAll(hinglishResult.categories)
         
-        Log.d("IntentFirewall|TEST", "Message: \$message")
-        Log.d("IntentFirewall|TEST", "Source: \$source")
-        Log.d("IntentFirewall|TEST", "Result: detected=\$detected, confidence=\$confidence")
+        Log.d("IntentFirewall|TEST", "Message: $message")
+        Log.d("IntentFirewall|TEST", "Source: $source")
+        Log.d("IntentFirewall|TEST", "Result: detected=$detected, confidence=$confidence")
         
         val result = Arguments.createMap().apply {
             putBoolean("detected", detected)
