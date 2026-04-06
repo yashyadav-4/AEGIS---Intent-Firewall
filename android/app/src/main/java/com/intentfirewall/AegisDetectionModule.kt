@@ -10,6 +10,7 @@ import androidx.core.app.ActivityCompat
 import android.content.pm.PackageManager
 import android.Manifest
 import android.util.Log
+import androidx.core.content.ContextCompat
 
 class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
     override fun getName(): String = "NotificationService"
@@ -77,6 +78,25 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
     }
 
     @ReactMethod
+    fun checkNotificationListenerEnabled(promise: Promise) {
+        try {
+            val context = reactApplicationContext
+            val enabledListeners = Settings.Secure.getString(
+                context.contentResolver,
+                "enabled_notification_listeners"
+            ) ?: ""
+
+            val componentName = ComponentName(context, NotificationService::class.java)
+            val flattened = componentName.flattenToString()
+
+            promise.resolve(enabledListeners.contains(flattened))
+        } catch (e: Exception) {
+            Log.e("AegisDetectionModule", "Failed to check notification listener state", e)
+            promise.resolve(false)
+        }
+    }
+
+    @ReactMethod
     fun checkCallScreeningPermission(promise: Promise) {
         var granted = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -97,6 +117,29 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
                     activity.startActivityForResult(intent, 1002)
                 }
             }
+        }
+        promise.resolve(true)
+    }
+
+    @ReactMethod
+    fun checkAudioRecordingPermission(promise: Promise) {
+        val granted = ContextCompat.checkSelfPermission(
+            reactApplicationContext,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+
+        promise.resolve(granted)
+    }
+
+    @ReactMethod
+    fun requestAudioRecordingPermission(promise: Promise) {
+        val activity = getCurrentActivity()
+        if (activity != null) {
+            ActivityCompat.requestPermissions(
+                activity,
+                arrayOf(Manifest.permission.RECORD_AUDIO),
+                1003
+            )
         }
         promise.resolve(true)
     }
