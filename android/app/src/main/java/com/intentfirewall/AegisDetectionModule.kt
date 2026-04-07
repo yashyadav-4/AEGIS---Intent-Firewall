@@ -1,16 +1,21 @@
 package com.intentfirewall
 
 import com.facebook.react.bridge.*
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.os.Build
 import android.provider.Settings
 import android.content.Intent
 import android.content.ComponentName
+import android.text.TextUtils
+import android.view.accessibility.AccessibilityManager
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ActivityCompat
 import android.content.pm.PackageManager
 import android.Manifest
 import android.util.Log
 import androidx.core.content.ContextCompat
+import org.json.JSONArray
+import org.json.JSONObject
 
 class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
     override fun getName(): String = "NotificationService"
@@ -97,6 +102,95 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
     }
 
     @ReactMethod
+    fun checkAccessibilityServiceEnabled(promise: Promise) {
+        try {
+            val context = reactApplicationContext
+            val expectedClass = OpenChatAccessibilityService::class.java.name
+
+            val accessibilityManager =
+                context.getSystemService(AccessibilityManager::class.java)
+                    ?: throw IllegalStateException("AccessibilityManager unavailable")
+            val activeServices =
+                accessibilityManager.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+
+            for (service in activeServices) {
+                val info = service.resolveInfo?.serviceInfo ?: continue
+                if (info.packageName == context.packageName && info.name == expectedClass) {
+                    promise.resolve(true)
+                    return
+                }
+            }
+
+            // Fallback to secure settings parsing for OEM variants.
+            val enabled = Settings.Secure.getInt(
+                context.contentResolver,
+                Settings.Secure.ACCESSIBILITY_ENABLED,
+                0
+            ) == 1
+
+            if (!enabled) {
+                promise.resolve(false)
+                return
+            }
+
+            val enabledServices = Settings.Secure.getString(
+                context.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: ""
+
+            val fullName = ComponentName(context, OpenChatAccessibilityService::class.java)
+                .flattenToString()
+            val shortName = ComponentName(context, OpenChatAccessibilityService::class.java)
+                .flattenToShortString()
+
+            val splitter = TextUtils.SimpleStringSplitter(':')
+            splitter.setString(enabledServices)
+            while (splitter.hasNext()) {
+                val service = splitter.next()
+                if (
+                    service.equals(fullName, ignoreCase = true) ||
+                    service.equals(shortName, ignoreCase = true)
+                ) {
+                    promise.resolve(true)
+                    return
+                }
+            }
+
+            promise.resolve(false)
+        } catch (e: Exception) {
+            Log.e("AegisDetectionModule", "Failed to check accessibility service state", e)
+            promise.resolve(false)
+        }
+    }
+
+    @ReactMethod
+    fun promptAccessibilityServiceSetup(promise: Promise) {
+        try {
+            val context = reactApplicationContext
+            val component = ComponentName(context, OpenChatAccessibilityService::class.java)
+
+            val detailsIntent = Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra("android.intent.extra.COMPONENT_NAME", component.flattenToString())
+                putExtra(":settings:fragment_args_key", component.flattenToString())
+            }
+
+            try {
+                context.startActivity(detailsIntent)
+            } catch (_: Exception) {
+                val fallbackIntent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                fallbackIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(fallbackIntent)
+            }
+
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e("AegisDetectionModule", "Failed to open accessibility settings", e)
+            promise.resolve(false)
+        }
+    }
+
+    @ReactMethod
     fun checkCallScreeningPermission(promise: Promise) {
         var granted = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -154,5 +248,48 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
             putArray("keywords", Arguments.fromList(emptyList<String>()))
         }
         promise.resolve(result)
+    }
+
+    @ReactMethod
+    fun drainBufferedNotifications(promise: Promise) {
+        try {
+            val events = NotificationEventEmitter.drainBufferedEvents(reactApplicationContext)
+            val out = Arguments.createArray()
+
+            for (i in 0 until events.length()) {
+                val item = events.optJSONObject(i) ?: JSONObject()
+                val map = Arguments.createMap().apply {
+                    putString("appName", item.optString("appName", ""))
+                    putString("title", item.optString("title", ""))
+                    putString("text", item.optString("text", ""))
+                    putString("packageName", item.optString("packageName", ""))
+                    putBoolean("flagged", item.optBoolean("flagged", false))
+                    putString("matchedCategory", item.optString("matchedCategory", ""))
+                    putString("context", item.optString("context", ""))
+                    putDouble("confidence", item.optDouble("confidence", 0.0))
+                    putDouble("timestamp", item.optDouble("timestamp", 0.0))
+                    putString("sender", item.optString("sender", ""))
+                    putString("appSource", item.optString("appSource", ""))
+                    putString("captureMethod", item.optString("captureMethod", "notification"))
+                }
+                out.pushMap(map)
+            }
+
+            promise.resolve(out)
+        } catch (e: Exception) {
+            Log.e("AegisDetectionModule", "Failed to drain buffered notifications", e)
+            promise.resolve(Arguments.createArray())
+        }
+    }
+
+    @ReactMethod
+    fun drainBufferedNotificationsJson(promise: Promise) {
+        try {
+            val events = NotificationEventEmitter.drainBufferedEvents(reactApplicationContext)
+            promise.resolve(events.toString())
+        } catch (e: Exception) {
+            Log.e("AegisDetectionModule", "Failed to drain buffered notifications JSON", e)
+            promise.resolve(JSONArray().toString())
+        }
     }
 }

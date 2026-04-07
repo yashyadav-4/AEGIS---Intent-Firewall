@@ -39,6 +39,20 @@ export async function checkNotificationListenerEnabled(): Promise<boolean> {
   return false;
 }
 
+export async function checkAccessibilityServiceEnabled(): Promise<boolean> {
+  if (Platform.OS !== 'android') return true;
+
+  if (NotificationService?.checkAccessibilityServiceEnabled) {
+    try {
+      return await NotificationService.checkAccessibilityServiceEnabled();
+    } catch (error) {
+      console.warn('Native checkAccessibilityServiceEnabled failed:', error);
+    }
+  }
+
+  return false;
+}
+
 export async function promptNotificationListenerSetup(): Promise<void> {
   if (Platform.OS !== 'android') return;
 
@@ -54,6 +68,31 @@ export async function promptNotificationListenerSetup(): Promise<void> {
   Alert.alert(
     'Enable Notification Access',
     'Please enable notification access for Intent Firewall.',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Open Settings',
+        onPress: () => Linking.openSettings().catch(() => {}),
+      },
+    ],
+  );
+}
+
+export async function promptAccessibilityServiceSetup(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+
+  if (NotificationService?.promptAccessibilityServiceSetup) {
+    try {
+      await NotificationService.promptAccessibilityServiceSetup();
+      return;
+    } catch (error) {
+      console.warn('Native promptAccessibilityServiceSetup failed:', error);
+    }
+  }
+
+  Alert.alert(
+    'Enable Accessibility Access',
+    'Please enable accessibility access for Intent Firewall to capture open-chat messages.',
     [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -131,15 +170,17 @@ export async function requestAudioRecordingPermission(): Promise<boolean> {
 export interface PermissionStatus {
   notification: boolean;
   notificationListener: boolean;
+  accessibilityService: boolean;
   callScreening: boolean;
   audioRecording: boolean;
   sms: boolean;
 }
 
 export async function getAllPermissionStatus(): Promise<PermissionStatus> {
-  const [notification, notificationListener, callScreening, audioRecording, sms] = await Promise.all([
+  const [notification, notificationListener, accessibilityService, callScreening, audioRecording, sms] = await Promise.all([
     checkNotificationPermission(),
     checkNotificationListenerEnabled(),
+    checkAccessibilityServiceEnabled(),
     checkCallScreeningPermission(),
     checkAudioRecordingPermission(),
     checkSmsPermission(),
@@ -148,6 +189,7 @@ export async function getAllPermissionStatus(): Promise<PermissionStatus> {
   return {
     notification,
     notificationListener,
+    accessibilityService,
     callScreening,
     audioRecording,
     sms,
@@ -164,6 +206,11 @@ export async function requestAllRequiredPermissions(): Promise<PermissionStatus>
   const listenerEnabled = await checkNotificationListenerEnabled();
   if (!listenerEnabled) {
     await promptNotificationListenerSetup();
+  }
+
+  const accessibilityEnabled = await checkAccessibilityServiceEnabled();
+  if (!accessibilityEnabled) {
+    await promptAccessibilityServiceSetup();
   }
 
   return getAllPermissionStatus();

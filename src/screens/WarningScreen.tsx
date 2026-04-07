@@ -137,7 +137,7 @@ const WarningScreen = ({
 
         <TouchableOpacity style={styles.dismissButton} onPress={onDismiss}>
           <Text style={styles.dismissButtonText}>
-            I understand the risk — Dismiss
+            Discard this threat
           </Text>
         </TouchableOpacity>
       </View>

@@ -21,6 +21,7 @@ export interface MessageEvent {
   packageName: string;
   matchedCategory: string;
   flagged: boolean;
+  source: 'notification' | 'open_chat' | 'sms_direct';
   time: string;
   timestamp: number;
 }
@@ -39,6 +40,24 @@ const MESSAGES_KEY = 'messages';
 const SETTINGS_KEY = 'settings';
 let messageWriteQueue: Promise<void> = Promise.resolve();
 
+const normalizeForDedupe = (value: string): string =>
+  value.toLowerCase().replace(/\s+/g, ' ').trim();
+
+const detectMessageSource = (
+  event: Omit<MessageEvent, 'id' | 'timestamp' | 'source'> & {source?: MessageEvent['source']},
+): MessageEvent['source'] => {
+  if (event.source) {
+    return event.source;
+  }
+  if (event.matchedCategory === 'OPEN_CHAT') {
+    return 'open_chat';
+  }
+  if (event.matchedCategory === 'SMS_BROADCAST_DIRECT') {
+    return 'sms_direct';
+  }
+  return 'notification';
+};
+
 const DEFAULT_SETTINGS: Settings = {
   autoBlock: false,
   strictMode: false,
@@ -50,14 +69,34 @@ const DEFAULT_SETTINGS: Settings = {
 
 // ─── Threats ───────────────────────────────────────────
 
-export const saveThreat = async (threat: Omit<Threat, 'id' | 'timestamp'>) => {
+export const saveThreat = async (
+  threat: Omit<Threat, 'id' | 'timestamp'> & {timestamp?: number},
+) => {
   console.log("[saveThreat] saving threat:", threat);
   try {
     const existing = await getThreats();
+    const ts =
+      typeof threat.timestamp === 'number' && Number.isFinite(threat.timestamp)
+        ? Math.floor(threat.timestamp)
+        : Date.now();
+
+    const normalizedIncoming = normalizeForDedupe(threat.message || '');
+    const duplicate = existing.slice(0, 40).find(item => {
+      const sameApp = item.app === threat.app;
+      const sameCategory = item.category === threat.category;
+      const sameMessage = normalizeForDedupe(item.message || '') === normalizedIncoming;
+      const closeInTime = Math.abs(ts - item.timestamp) <= 10_000;
+      return sameApp && sameCategory && sameMessage && closeInTime;
+    });
+
+    if (duplicate) {
+      return duplicate;
+    }
+
     const newThreat: Threat = {
       ...threat,
       id: Date.now().toString(),
-      timestamp: Date.now(),
+      timestamp: ts,
     };
     const updated = [newThreat, ...existing];
     await AsyncStorage.setItem(THREATS_KEY, JSON.stringify(updated));
@@ -92,6 +131,16 @@ export const updateThreatBlocked = async (id: string, blocked = true) => {
     await AsyncStorage.setItem(THREATS_KEY, JSON.stringify(updated));
   } catch (e) {
     console.error('Error updating threat blocked state:', e);
+  }
+};
+
+export const deleteThreatById = async (id: string) => {
+  try {
+    const existing = await getThreats();
+    const updated = existing.filter(t => t.id !== id);
+    await AsyncStorage.setItem(THREATS_KEY, JSON.stringify(updated));
+  } catch (e) {
+    console.error('Error deleting threat:', e);
   }
 };
 
@@ -136,17 +185,58 @@ export const formatTime = (timestamp: number): string => {
 // ─── Message Events ───────────────────────────────────
 
 export const saveMessageEvent = async (
-  event: Omit<MessageEvent, 'id' | 'timestamp'>,
+  event: Omit<MessageEvent, 'id' | 'timestamp' | 'source'> & {
+    source?: MessageEvent['source'];
+    eventTimestamp?: number;
+  },
 ) => {
   let savedEvent: MessageEvent | undefined;
 
   messageWriteQueue = messageWriteQueue.then(async () => {
     try {
       const existing = await getMessageEvents();
+      const normalizedMessage = normalizeForDedupe(event.message || '');
+      const normalizedTitle = normalizeForDedupe(event.title || '');
+      const source = detectMessageSource(event);
+      const eventTs =
+        typeof event.eventTimestamp === 'number' && Number.isFinite(event.eventTimestamp)
+          ? Math.floor(event.eventTimestamp)
+          : Date.now();
+
+      if (!normalizedMessage && !normalizedTitle) {
+        return;
+      }
+
+      const duplicate = existing.slice(0, 40).find(item => {
+        const closeInTime = Math.abs(eventTs - item.timestamp) <= 8000;
+        if (!closeInTime) return false;
+
+        const sameApp = item.app === event.app;
+        const sameMessage = normalizeForDedupe(item.message || '') === normalizedMessage;
+        const sameTitle = normalizeForDedupe(item.title || '') === normalizedTitle;
+
+        if (sameApp && source === 'open_chat' && item.source === 'open_chat') {
+          const existingMessage = normalizeForDedupe(item.message || '');
+          const partialOverlap =
+            existingMessage.includes(normalizedMessage) ||
+            normalizedMessage.includes(existingMessage);
+          if (partialOverlap) {
+            return true;
+          }
+        }
+
+        return sameApp && sameMessage && sameTitle;
+      });
+
+      if (duplicate) {
+        return;
+      }
+
       const newEvent: MessageEvent = {
         ...event,
+        source,
         id: Date.now().toString() + Math.random().toString(36).slice(2, 7),
-        timestamp: Date.now(),
+        timestamp: eventTs,
       };
       const updated = [newEvent, ...existing].slice(0, 500);
       await AsyncStorage.setItem(MESSAGES_KEY, JSON.stringify(updated));

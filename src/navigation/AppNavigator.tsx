@@ -32,7 +32,9 @@ const WarningScreenWrapper = ({route, navigation}: WarningScreenProps) => {
 
         updateThreatBlocked(threatId, true).finally(() => navigation.goBack());
       }}
-      onDismiss={() => navigation.goBack()}
+      onDismiss={() => {
+        navigation.goBack();
+      }}
       onCallHelp={() => navigation.goBack()}
     />
   );

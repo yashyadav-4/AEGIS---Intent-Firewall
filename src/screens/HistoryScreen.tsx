@@ -16,7 +16,7 @@ import {
 } from '../utils/storage';
 
 const FILTERS = ['All', 'WhatsApp', 'SMS', 'Calls'];
-const MESSAGE_FILTERS = ['All', 'WhatsApp', 'Telegram', 'SMS', 'Hidden'];
+const MESSAGE_FILTERS = ['All', 'WhatsApp', 'Telegram', 'SMS', 'Chat Capture', 'Hidden'];
 
 const HistoryScreen = () => {
   const navigation = useNavigation();
@@ -99,6 +99,9 @@ const HistoryScreen = () => {
 
   const filteredMessages = messages.filter(m => {
     if (activeMessageFilter === 'All') return true;
+    if (activeMessageFilter === 'Chat Capture') {
+      return m.source === 'open_chat' || m.matchedCategory.startsWith('OPEN_CHAT');
+    }
     if (activeMessageFilter === 'Hidden') {
       return (
         m.matchedCategory === 'HIDDEN_BY_OS' ||
@@ -110,8 +113,16 @@ const HistoryScreen = () => {
 
   const getMessageChip = (item: MessageEvent) => {
     if (item.matchedCategory === 'SMS_BROADCAST_DIRECT') return 'SMS Direct';
+    if (item.source === 'open_chat') return 'Chat';
     if (item.matchedCategory === 'HIDDEN_BY_OS') return 'Hidden';
     if (item.matchedCategory === 'NO_PREVIEW') return 'No Preview';
+    return 'Notification';
+  };
+
+  const getMessageSourceLabel = (item: MessageEvent) => {
+    const source = item.source || (item.matchedCategory.startsWith('OPEN_CHAT') ? 'open_chat' : 'notification');
+    if (source === 'open_chat') return 'Chat Capture';
+    if (source === 'sms_direct') return 'SMS Direct';
     return 'Notification';
   };
 
@@ -236,6 +247,10 @@ const HistoryScreen = () => {
                     <View style={styles.messageChip}>
                       <Text style={styles.messageChipText}>{getMessageChip(item)}</Text>
                     </View>
+                  </View>
+
+                  <View style={styles.sourceChip}>
+                    <Text style={styles.sourceChipText}>{getMessageSourceLabel(item)}</Text>
                   </View>
 
                   <Text style={styles.messageTitle}>{item.title || 'Unknown sender'}</Text>
@@ -369,6 +384,21 @@ const styles = StyleSheet.create({
     color: '#D0D7E7',
     fontSize: 12,
     lineHeight: 18,
+  },
+  sourceChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#0F1A31',
+    borderWidth: 1,
+    borderColor: '#2D4A80',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginBottom: 8,
+  },
+  sourceChipText: {
+    color: '#AFC8FF',
+    fontSize: 10,
+    fontWeight: '700',
   },
   threatBadge: {
     backgroundColor: '#E6394620', borderRadius: 6,

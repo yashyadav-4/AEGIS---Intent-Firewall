@@ -5,6 +5,7 @@ import {
   getAllPermissionStatus,
   PermissionStatus,
   promptNotificationListenerSetup,
+  promptAccessibilityServiceSetup,
   openPermissionSettings,
   requestAllRequiredPermissions
 } from '../utils/permissionManager';
@@ -15,6 +16,7 @@ const SettingsScreen = () => {
   const [permissions, setPermissions] = useState<PermissionStatus>({
     notification: false,
     notificationListener: false,
+    accessibilityService: false,
     callScreening: false,
     audioRecording: false,
     sms: false,
@@ -79,7 +81,8 @@ const SettingsScreen = () => {
       result.callScreening &&
       result.notification &&
       result.sms &&
-      result.notificationListener
+      result.notificationListener &&
+      result.accessibilityService
     ) {
       Alert.alert('Permissions ready', 'All required runtime permissions are granted.');
       return;
@@ -178,6 +181,10 @@ const SettingsScreen = () => {
             <Text style={styles.permissionLabel}>SMS</Text>
             {statusChip(permissions.sms)}
           </View>
+          <View style={styles.permissionRow}>
+            <Text style={styles.permissionLabel}>Open Chat Access</Text>
+            {statusChip(permissions.accessibilityService)}
+          </View>
           <Text style={styles.permissionHint}>
             Notification Access is a special Android setting needed for reading OTPs.
           </Text>
@@ -191,6 +198,12 @@ const SettingsScreen = () => {
           style={styles.actionButtonSecondary}
           onPress={promptNotificationListenerSetup}>
           <Text style={styles.actionTextSecondary}>Open Notification Listener Access</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionButtonSecondary}
+          onPress={promptAccessibilityServiceSetup}>
+          <Text style={styles.actionTextSecondary}>Open Accessibility Access</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
