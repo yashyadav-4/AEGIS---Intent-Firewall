@@ -2,7 +2,7 @@ import React, {useState, useEffect} from 'react';
 import {
   View, Text, StyleSheet, StatusBar,
   ScrollView, Switch, TouchableOpacity,
-  NativeEventEmitter,
+  DeviceEventEmitter,
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import type {StackNavigationProp} from '@react-navigation/stack';
@@ -53,8 +53,7 @@ const HomeScreen = () => {
   }, []);
 
   useEffect(() => {
-    const eventEmitter = new NativeEventEmitter();
-    const subscription = eventEmitter.addListener('onNotification', async data => {
+    const subscription = DeviceEventEmitter.addListener('onNotification', async data => {
       const settings = await getSettings();
       if (!settings.messageProtection) return;
 

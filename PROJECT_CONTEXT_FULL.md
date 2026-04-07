@@ -125,7 +125,7 @@ State:
 
 Primary flows:
 1. On mount, load saved settings and recent threats.
-2. Subscribe to native onNotification event.
+2. Subscribe to native onNotification event via global `DeviceEventEmitter` with strict cleanup.
 3. On notification event:
    - Read settings.
    - Skip if messageProtection disabled.
@@ -142,7 +142,7 @@ Primary flows:
 File: src/screens/WarningScreen.tsx
 
 Functionality:
-- Visual warning UI with mount animations.
+- Visual warning UI with mount animations (cleanly unmounted by capturing `Animated.loop`).
 - Shows category and confidence.
 - Buttons:
   - BLOCK SENDER (delegated callback)
@@ -257,10 +257,10 @@ Functionality sequence:
 4. Tier 1: RegexSentinel.analyze(text).
 5. Tier 2: Tier2Classifier.analyze(context or text).
 6. Tier 3 conditional escalate when tier1 or tier2 positive:
-   - builds proxy 768 feature vector (placeholder strategy)
-   - Tier3Classifier.analyze
+   - Tier3Classifier.analyze inference
 7. finalFlagged is OR of tier outputs.
 8. Emits payload to RN via NotificationEventEmitter.
+9. Models are safely initialized via `lazy` properties and disposed in `onDestroy()` to prevent memory leaks.
 
 Category resolution sent to RN:
 - AI_CONFIRMED if tier3 flagged.
@@ -273,23 +273,21 @@ File: RegexSentinel.kt
 - Precompiled regex categories include OTP_HARVEST, FINANCIAL_PRESSURE, ACCOUNT_SCARE, PHISHING_LINK, GIFT_CARD_SCAM, IMPERSONATION.
 - analyze(text) returns first matched category/pattern and flagged status.
 
-### 6.6 Tier 2 classifier (current implementation)
+### 6.6 Tier 2 classifier
 File: Tier2Classifier.kt
 
 Current status:
-- Lightweight keyword-hit heuristic.
-- confidence formula: 0.35 + hits*0.12 capped at 0.95.
-- isScam threshold at confidence >= 0.55.
+- ONNX DistilBERT model integration via `OrtSession`.
+- Uses safe try/catch blocks dropping back to `isScam = false` on failure to prevent crashes.
+- Safely instantiates and manages `OrtEnvironment`.
 
-This is not running the ONNX DistilBERT model yet in current Kotlin implementation.
-
-### 6.7 Tier 3 classifier (current implementation)
+### 6.7 Tier 3 classifier
 File: Tier3Classifier.kt
 
 Current status:
-- Placeholder numeric aggregator.
-- confidence = mean(feature vector), clamped to [0,1].
-- isScam threshold at confidence >= 0.6.
+- TFLite Interpreter integration for vector evaluation.
+- Uses safe try/catch fallback dropping back to `isScam = false`.
+- Manages `Interpreter` lifecycle safely.
 
 ### 6.8 Context buffer
 File: ContextBuffer.kt
@@ -341,6 +339,14 @@ Activation gating states:
 - metadataHeuristicFired set by onCallMetadataUpdate
 - spectralEnergyFired set by onSpectralEnergyUpdate
 - shouldActivate requires both true
+
+### 6.11 Call Screening Service
+File: CallScreeningService.kt
+
+Responsibilities:
+- Extends `android.telecom.CallScreeningService`.
+- Hooks directly into native OS call screening (requires `READ_CALL_LOG` permission and manifest configuration).
+- Designed to intercept unknown numbers: responds with `setDisallowCall(false)` to let safe calls through unless flagged by the ML pipeline.
 
 ---
 
@@ -857,7 +863,7 @@ Internal helper groups include:
 - Some scripts reference ASVspoof2021 paths while active pipeline references ASVspoof2019 LA layout.
 
 ### 12.3 Runtime implementation mismatch versus intended architecture
-- Native Tier2Classifier and Tier3Classifier are currently lightweight placeholders, not direct ONNX/TFLite model inference despite exported artifacts existing.
+- (Resolved) Native Tier2Classifier and Tier3Classifier are now wired up to perform actual ONNX and TFLite model inference, safely managed with fallbacks.
 
 ### 12.4 Duplicate native code copies
 - There are duplicate Kotlin files at android/AegisAudioDetector.kt and android/AegisCallMonitor.kt with package com.aegis.audio.
@@ -979,6 +985,7 @@ The deepfake audio stack has substantial implementation and model assets on Andr
 - src/utils/storage.ts: local persistence for threats/settings
 - src/utils/permissionManager.ts: Android permission orchestration
 - android/app/src/main/java/com/intentfirewall/NotificationService.kt: text detection pipeline entrypoint
+- android/app/src/main/java/com/intentfirewall/CallScreeningService.kt: caller-ID style incoming call gate
 - android/app/src/main/java/com/intentfirewall/AegisCallMonitor.kt: call audio monitoring service
 - android/app/src/main/java/com/intentfirewall/AegisAudioDetector.kt: deepfake audio inference engine
 - feature_extractors.py: all audio feature engineering

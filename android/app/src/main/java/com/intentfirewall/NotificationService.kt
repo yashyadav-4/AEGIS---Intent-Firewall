@@ -15,11 +15,27 @@ class NotificationService : NotificationListenerService() {
         }
     }
 
-    override fun onNotificationPosted(sbn: StatusBarNotification) {
+    private val tier2: Tier2Classifier? by lazy {
+        try {
+            Tier2Classifier(applicationContext)
+        } catch (e: Exception) {
+            Log.e("IntentFirewall", "Tier2 disabled: failed to load", e)
+            null
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        tier3?.close()
+        tier2?.close()
+    }
+
+    override fun onNotificationPosted(sbn: StatusBarNotification?) {
+        if (sbn == null) return
         val packageName = sbn.packageName
         Log.d("IntentFirewall", "Notification received from: $packageName")
 
-        val extras = sbn.notification.extras
+        val extras = sbn.notification?.extras ?: return
 
         val title = extras.getString("android.title") ?: ""
         val text = extras.getCharSequence("android.text")?.toString() ?: ""
@@ -69,9 +85,9 @@ class NotificationService : NotificationListenerService() {
             }
 
             // Tier 2 — DistilBERT keyword classifier
-            val tier2Result = Tier2Classifier(applicationContext).analyze(
+            val tier2Result = tier2?.analyze(
                 context.ifEmpty { text }
-            )
+            ) ?: Tier2Result(isScam = false, confidence = 0.0f, label = "SAFE")
 
             // Tier 3 — escalate
             val tier3Flagged = if (waitTier3 || tier2Result.isScam) {
@@ -118,7 +134,7 @@ class NotificationService : NotificationListenerService() {
         }
     }
 
-    override fun onNotificationRemoved(sbn: StatusBarNotification) {}
+    override fun onNotificationRemoved(sbn: StatusBarNotification?) {}
 
     private fun getAppName(packageName: String): String {
         return when (packageName) {

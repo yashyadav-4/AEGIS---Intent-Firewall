@@ -43,7 +43,7 @@ const WarningScreen = ({
     ]).start();
 
     // Pulse animation on warning icon
-    Animated.loop(
+    const pulse = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
           toValue: 1.2,
@@ -56,7 +56,10 @@ const WarningScreen = ({
           useNativeDriver: true,
         }),
       ]),
-    ).start();
+    );
+    pulse.start();
+
+    return () => pulse.stop();
   }, [fadeAnim, pulseAnim, slideAnim]);
 
   return (

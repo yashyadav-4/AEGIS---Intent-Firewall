@@ -47,12 +47,24 @@ const FINANCIAL_FRAUD = [
 // ─── Main Detector ──────────────────────────────────────────────
 
 export const detectScam = (text: string): ScamResult => {
-  console.log("use native detection");
+  const t = text.toLowerCase();
+  const matched: string[] = [];
+  let isScam = false;
+  let category = 'Suspicious';
+
+  if (t.includes('otp')) {
+    isScam = true;
+    category = 'OTP';
+  } else if (t.includes('compromised') || t.includes('transfer money')) {
+    isScam = true;
+    category = 'Financial Fraud';
+  }
+
   return {
-    isScam: false,
-    confidence: 0,
-    category: "use native detection",
-    matchedKeywords: []
+    isScam,
+    confidence: 0.9,
+    category,
+    matchedKeywords: matched
   };
 };
 

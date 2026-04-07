@@ -4,10 +4,14 @@ const { NotificationService } = NativeModules;
 
 export async function checkNotificationPermission(): Promise<boolean> {
   if (Platform.OS === 'android') {
-    try {
-      return await NotificationService.checkNotificationPermission();
-    } catch {
-      return false;
+    if (Platform.Version >= 33) {
+      return await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+    } else {
+      try {
+        return await NotificationService.checkNotificationPermission();
+      } catch {
+        return false;
+      }
     }
   }
   return true;
@@ -15,11 +19,12 @@ export async function checkNotificationPermission(): Promise<boolean> {
 
 export async function requestNotificationPermission(): Promise<boolean> {
   if (Platform.OS === 'android') {
-    try {
-      return await NotificationService.requestNotificationPermission();
-    } catch {
-      return false;
+    if (Platform.Version >= 33) {
+      const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+      return result === PermissionsAndroid.RESULTS.GRANTED;
     }
+    // Fallback for older versions where it's granted by default if in manifest
+    return true;
   }
   return true;
 }
@@ -71,15 +76,40 @@ export async function checkAudioRecordingPermission(): Promise<boolean> {
   return true;
 }
 
+export async function checkSmsPermission(): Promise<boolean> {
+  if (Platform.OS === 'android') {
+    const receive = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECEIVE_SMS);
+    const read = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS);
+    return receive && read;
+  }
+  return true;
+}
+
 export async function requestAudioRecordingPermission(): Promise<boolean> {
   if (Platform.OS === 'android') {
     const results = await PermissionsAndroid.requestMultiple([
       PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
       PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
+      PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
+      PermissionsAndroid.PERMISSIONS.READ_SMS,
     ]);
     return (
       results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED &&
       results[PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE] === PermissionsAndroid.RESULTS.GRANTED
+    );
+  }
+  return true;
+}
+
+export async function requestSmsPermission(): Promise<boolean> {
+  if (Platform.OS === 'android') {
+    const results = await PermissionsAndroid.requestMultiple([
+      PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
+      PermissionsAndroid.PERMISSIONS.READ_SMS,
+    ]);
+    return (
+      results[PermissionsAndroid.PERMISSIONS.RECEIVE_SMS] === PermissionsAndroid.RESULTS.GRANTED &&
+      results[PermissionsAndroid.PERMISSIONS.READ_SMS] === PermissionsAndroid.RESULTS.GRANTED
     );
   }
   return true;
@@ -90,6 +120,7 @@ export interface PermissionStatus {
   notificationListener: boolean;
   callScreening: boolean;
   audioRecording: boolean;
+  sms: boolean;
 }
 
 export async function getAllPermissionStatus(): Promise<PermissionStatus> {
@@ -97,13 +128,29 @@ export async function getAllPermissionStatus(): Promise<PermissionStatus> {
   const notificationListener = await checkNotificationListenerEnabled();
   const callScreening = await checkCallScreeningPermission();
   const audioRecording = await checkAudioRecordingPermission();
-  return { notification, notificationListener, callScreening, audioRecording };
+  const sms = await checkSmsPermission();
+  
+  return { notification, notificationListener, callScreening, audioRecording, sms };
 }
 
 export async function requestAllRequiredPermissions(): Promise<PermissionStatus> {
-  const audioState = await requestAudioRecordingPermission();
-  await requestNotificationPermission();
+  if (Platform.OS === 'android') {
+    const permissionsToRequest = [
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+      PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
+      PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
+      PermissionsAndroid.PERMISSIONS.READ_SMS,
+    ];
+    
+    if (Platform.Version >= 33) {
+      permissionsToRequest.push(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+    }
+    
+    await PermissionsAndroid.requestMultiple(permissionsToRequest);
+  }
+
   await requestCallScreeningPermission();
+  
   return await getAllPermissionStatus();
 }
 

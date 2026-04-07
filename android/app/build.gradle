@@ -83,7 +83,7 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "2.0"
+        versionName "1.0.0"
         ndk {
             abiFilters "arm64-v8a", "armeabi-v7a"
         }
@@ -100,11 +100,22 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        
+        def localProperties = new Properties()
+        def localPropertiesFile = rootProject.file('local.properties')
+        if (localPropertiesFile.exists()) {
+            localPropertiesFile.withReader('UTF-8') { reader ->
+                localProperties.load(reader)
+            }
+        }
+
         release {
-            storeFile file('intentfirewall.keystore')
-            storePassword 'firewall123'
-            keyAlias 'intentfirewall'
-            keyPassword 'firewall123'
+            if (file('intentfirewall.keystore').exists()) {
+                storeFile file('intentfirewall.keystore')
+                storePassword localProperties['MYAPP_RELEASE_STORE_PASSWORD'] ?: "placeholder"
+                keyAlias localProperties['MYAPP_RELEASE_KEY_ALIAS'] ?: "placeholder"
+                keyPassword localProperties['MYAPP_RELEASE_KEY_PASSWORD'] ?: "placeholder"
+            }
         }
     }
     buildTypes {
@@ -115,8 +126,8 @@ android {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
             signingConfig signingConfigs.release
-            minifyEnabled true
-            shrinkResources true
+            minifyEnabled false
+            shrinkResources false
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
     }

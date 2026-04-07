@@ -16,14 +16,18 @@ data class Tier3Result(
 )
 
 class Tier3Classifier(private val context: Context) {
-    private val interpreter: Interpreter
+    private var interpreter: Interpreter? = null
 
     // Target inputs are (1, 768) raw int8 float inputs quantized.
     private val quantScale = 0.04719424247741699f
     private val quantZeroPoint = 43
 
     init {
-        interpreter = Interpreter(loadModelFile("tier3_classifier.tflite"), Interpreter.Options())
+        try {
+            interpreter = Interpreter(loadModelFile("tier3_classifier.tflite"), Interpreter.Options())
+        } catch (e: Exception) {
+            android.util.Log.e("IntentFirewall", "Failed to initialize Tier3 TFLite interpreter", e)
+        }
     }
 
     private fun loadModelFile(modelName: String): MappedByteBuffer {
@@ -36,6 +40,7 @@ class Tier3Classifier(private val context: Context) {
     }
 
     fun analyze(features: FloatArray): Tier3Result {
+        val currentInterpreter = interpreter ?: return Tier3Result(isScam = false, confidence = 0.0f, latencyMs = 0L)
         val start = SystemClock.elapsedRealtimeNanos()
 
         if (features.isEmpty() || features.size != 768) {
@@ -56,7 +61,7 @@ class Tier3Classifier(private val context: Context) {
 
         try {
             android.util.Log.d("IntentFirewall", "Starting Tier3 detection")
-            interpreter.run(inputBuffer, outputBuffer)
+            currentInterpreter.run(inputBuffer, outputBuffer)
         } catch (e: Exception) {
             e.printStackTrace()
             android.util.Log.e("IntentFirewall", "Tier3 detection failed", e)
@@ -71,5 +76,15 @@ class Tier3Classifier(private val context: Context) {
 
         val latencyMs = (SystemClock.elapsedRealtimeNanos() - start) / 1_000_000L
         return Tier3Result(isScam = pScam >= 0.5f, confidence = pScam, latencyMs = latencyMs)
+    }
+
+    fun close() {
+        try {
+            interpreter?.close()
+        } catch (e: Exception) {
+            android.util.Log.e("IntentFirewall", "Failed to close Tier3 resources", e)
+        } finally {
+            interpreter = null
+        }
     }
 }

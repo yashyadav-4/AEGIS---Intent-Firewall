@@ -106,3 +106,4 @@ yarn-error.log
 
 # Misc
 .vscode/
+android/local.properties
