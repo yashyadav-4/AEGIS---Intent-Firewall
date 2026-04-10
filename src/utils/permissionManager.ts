@@ -167,22 +167,95 @@ export async function requestAudioRecordingPermission(): Promise<boolean> {
   return result === PermissionsAndroid.RESULTS.GRANTED;
 }
 
+export async function checkPhoneStatePermission(): Promise<boolean> {
+  if (Platform.OS !== 'android') return true;
+  return PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE);
+}
+
+export async function requestPhoneStatePermission(): Promise<boolean> {
+  if (Platform.OS !== 'android') return true;
+
+  const result = await PermissionsAndroid.request(
+    PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE,
+  );
+
+  return result === PermissionsAndroid.RESULTS.GRANTED;
+}
+
+export async function startCallProtection(): Promise<boolean> {
+  if (Platform.OS !== 'android') return false;
+
+  if (NotificationService?.startCallProtection) {
+    try {
+      return await NotificationService.startCallProtection();
+    } catch (error) {
+      console.warn('Native startCallProtection failed:', error);
+    }
+  }
+
+  return false;
+}
+
+export async function stopCallProtection(): Promise<boolean> {
+  if (Platform.OS !== 'android') return false;
+
+  if (NotificationService?.stopCallProtection) {
+    try {
+      return await NotificationService.stopCallProtection();
+    } catch (error) {
+      console.warn('Native stopCallProtection failed:', error);
+    }
+  }
+
+  return false;
+}
+
+export async function isCallProtectionRunning(): Promise<boolean> {
+  if (Platform.OS !== 'android') return false;
+
+  if (NotificationService?.isCallProtectionRunning) {
+    try {
+      return await NotificationService.isCallProtectionRunning();
+    } catch (error) {
+      console.warn('Native isCallProtectionRunning failed:', error);
+    }
+  }
+
+  return false;
+}
+
+export async function getProtectionDiagnostics(): Promise<Record<string, unknown>> {
+  if (Platform.OS !== 'android') return {};
+
+  if (NotificationService?.getProtectionDiagnostics) {
+    try {
+      return await NotificationService.getProtectionDiagnostics();
+    } catch (error) {
+      console.warn('Native getProtectionDiagnostics failed:', error);
+    }
+  }
+
+  return {};
+}
+
 export interface PermissionStatus {
   notification: boolean;
   notificationListener: boolean;
   accessibilityService: boolean;
   callScreening: boolean;
   audioRecording: boolean;
+  phoneState: boolean;
   sms: boolean;
 }
 
 export async function getAllPermissionStatus(): Promise<PermissionStatus> {
-  const [notification, notificationListener, accessibilityService, callScreening, audioRecording, sms] = await Promise.all([
+  const [notification, notificationListener, accessibilityService, callScreening, audioRecording, phoneState, sms] = await Promise.all([
     checkNotificationPermission(),
     checkNotificationListenerEnabled(),
     checkAccessibilityServiceEnabled(),
     checkCallScreeningPermission(),
     checkAudioRecordingPermission(),
+    checkPhoneStatePermission(),
     checkSmsPermission(),
   ]);
 
@@ -192,6 +265,7 @@ export async function getAllPermissionStatus(): Promise<PermissionStatus> {
     accessibilityService,
     callScreening,
     audioRecording,
+    phoneState,
     sms,
   };
 }
@@ -200,6 +274,7 @@ export async function requestAllRequiredPermissions(): Promise<PermissionStatus>
   // Trigger Android runtime dialogs in sequence from a single button tap.
   await requestNotificationPermission();
   await requestAudioRecordingPermission();
+  await requestPhoneStatePermission();
   await requestSmsPermission();
   await requestCallScreeningPermission();
 

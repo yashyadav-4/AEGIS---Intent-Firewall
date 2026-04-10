@@ -21,14 +21,17 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
+import android.media.AudioManager
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import android.telephony.PhoneStateListener
 import android.telephony.TelephonyManager
 import android.util.Log
@@ -39,6 +42,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -52,9 +56,32 @@ class AegisCallMonitor : Service() {
         private const val OVERLAP_SAMPLES = 16000
         private const val FLAT_PITCH_THRESHOLD = 0.15f
         private const val CHANNEL_ID = "aegis_protection"
+        private const val ALERT_CHANNEL_ID = "aegis_voice_alerts"
         private const val NOTIFICATION_ID = 1001
+        private const val VOICE_ALERT_NOTIFICATION_ID = 1002
+        private const val GEMINI_WINDOW_INTERVAL_MS = 3500L
+        private const val LOCAL_ANALYZE_INTERVAL_MS = 2200L
+        private const val ALERT_COOLDOWN_MS = 10_000L
         const val ACTION_START = "com.aegis.START_MONITOR"
         const val ACTION_STOP = "com.aegis.STOP_MONITOR"
+        const val ACTION_VOICE_SCAM_INTENT = "com.aegis.VOICE_SCAM_INTENT"
+
+        @Volatile
+        var isServiceRunning: Boolean = false
+        @Volatile
+        var lastTier3Status: String = "idle"
+        @Volatile
+        var lastTier3AtMs: Long = 0L
+        @Volatile
+        var lastCaptureStatus: String = "idle"
+        @Volatile
+        var lastCaptureAtMs: Long = 0L
+        @Volatile
+        var monitorArmed: Boolean = false
+        @Volatile
+        var inCallDetected: Boolean = false
+        @Volatile
+        var audioCaptureRunning: Boolean = false
     }
 
     private var audioRecord: AudioRecord? = null
@@ -64,14 +91,33 @@ class AegisCallMonitor : Service() {
     private var isRecording = false
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var wakeLock: PowerManager.WakeLock? = null
+    @Volatile
+    private var geminiVoiceInFlight = false
+    @Volatile
+    private var localAnalyzeInFlight = false
+    private var lastGeminiVoiceAtMs = 0L
+    private var lastLocalAnalyzeAtMs = 0L
+    private var lastVoiceAlertAtMs = 0L
+    @Volatile
+    private var lastLocalSyntheticScore = 0f
 
     private var telephonyManager: TelephonyManager? = null
+    private var audioManager: AudioManager? = null
     private var phoneStateListener: PhoneStateListener? = null
+    private var monitorEnabled = false
+    private var isInCall = false
+    @Volatile
+    private var callStatePollerRunning = false
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        detector = AegisAudioDetector(this)
+        detector = try {
+            AegisAudioDetector(this)
+        } catch (e: Exception) {
+            Log.w(TAG, "Local audio detector disabled (missing/corrupt model assets): ${e.message}")
+            null
+        }
 
         val pm = getSystemService(POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:AegisCallMonitor").apply {
@@ -79,22 +125,10 @@ class AegisCallMonitor : Service() {
         }
 
         telephonyManager = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
+        audioManager = getSystemService(AUDIO_SERVICE) as? AudioManager
         phoneStateListener = object : PhoneStateListener() {
             override fun onCallStateChanged(state: Int, incomingNumber: String?) {
-                when (state) {
-                    TelephonyManager.CALL_STATE_IDLE -> {
-                        stopCapture()
-                    }
-
-                    TelephonyManager.CALL_STATE_OFFHOOK -> {
-                        val isUnknown = incomingNumber.isNullOrEmpty()
-                        detector?.onCallMetadataUpdate(
-                            isUnknownNumber = isUnknown,
-                            isVideoCall = false
-                        )
-                        startCapture()
-                    }
-                }
+                handleCallStateChanged(state, incomingNumber)
             }
         }
 
@@ -102,24 +136,43 @@ class AegisCallMonitor : Service() {
             @Suppress("DEPRECATION")
             telephonyManager?.listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE)
         } catch (se: SecurityException) {
+            lastCaptureStatus = "read_phone_state_missing"
             Log.w(TAG, "READ_PHONE_STATE not granted; call-state monitoring disabled", se)
         } catch (e: Exception) {
+            lastCaptureStatus = "call_state_listener_failed:${e.javaClass.simpleName}"
             Log.e(TAG, "Failed to register phone state listener", e)
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        isServiceRunning = true
         startForeground(NOTIFICATION_ID, buildNotification())
 
         when (intent?.action) {
-            ACTION_START -> startCapture()
+            ACTION_START -> {
+                monitorEnabled = true
+                monitorArmed = true
+                isInCall = isVoiceSessionActive()
+                inCallDetected = isInCall
+                ensureCallStatePoller()
+                if (isInCall) {
+                    startCapture()
+                } else {
+                    lastCaptureStatus = "waiting_for_call"
+                    Log.i(TAG, "Call protection armed; waiting for active call")
+                }
+            }
             ACTION_STOP -> {
+                monitorEnabled = false
+                monitorArmed = false
+                isInCall = false
+                inCallDetected = false
                 stopCapture()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
             else -> {
-                if (!isRecording) startCapture()
+                if (monitorEnabled && isInCall && !isRecording) startCapture()
             }
         }
         return START_STICKY
@@ -129,6 +182,7 @@ class AegisCallMonitor : Service() {
         stopCapture()
         detector?.close()
         detector = null
+        isServiceRunning = false
 
         try {
             @Suppress("DEPRECATION")
@@ -137,6 +191,7 @@ class AegisCallMonitor : Service() {
         }
         phoneStateListener = null
         telephonyManager = null
+        audioManager = null
 
         serviceScope.cancel()
 
@@ -164,13 +219,23 @@ class AegisCallMonitor : Service() {
 
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
+
+            val alertChannel = NotificationChannel(
+                ALERT_CHANNEL_ID,
+                "Aegis Voice Scam Alerts",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                enableVibration(true)
+                setShowBadge(true)
+            }
+            manager.createNotificationChannel(alertChannel)
         }
     }
 
     private fun buildNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Aegis Active")
-            .setContentText("Monitoring call for deepfake audio")
+            .setContentText("Monitoring call for safety by Aegis")
             .setSmallIcon(android.R.drawable.ic_lock_silent_mode)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setSilent(true)
@@ -179,10 +244,83 @@ class AegisCallMonitor : Service() {
             .build()
     }
 
+    private fun handleCallStateChanged(state: Int, incomingNumber: String?) {
+        when (state) {
+            TelephonyManager.CALL_STATE_IDLE -> {
+                isInCall = isVoiceSessionActive()
+                inCallDetected = false
+                lastCaptureStatus = "waiting_for_call"
+                if (!isInCall) {
+                    stopCapture()
+                }
+            }
+
+            TelephonyManager.CALL_STATE_RINGING -> {
+                inCallDetected = true
+                lastCaptureStatus = "ringing_waiting_answer"
+            }
+
+            TelephonyManager.CALL_STATE_OFFHOOK -> {
+                isInCall = true
+                inCallDetected = true
+                val isUnknown = incomingNumber.isNullOrEmpty()
+                detector?.onCallMetadataUpdate(
+                    isUnknownNumber = isUnknown,
+                    isVideoCall = false
+                )
+                if (monitorEnabled) {
+                    startCapture()
+                } else {
+                    lastCaptureStatus = "monitor_disabled"
+                }
+            }
+        }
+    }
+
+    private fun ensureCallStatePoller() {
+        if (callStatePollerRunning) return
+        callStatePollerRunning = true
+
+        serviceScope.launch(Dispatchers.Default) {
+            while (isActive && monitorEnabled) {
+                try {
+                    val activeVoiceSession = isVoiceSessionActive()
+                    if (activeVoiceSession) {
+                        isInCall = true
+                        if (!isRecording) {
+                            startCapture()
+                        }
+                    } else {
+                        isInCall = false
+                        if (isRecording) {
+                            stopCapture()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Call-state poller check failed: ${e.message}")
+                }
+
+                delay(1500L)
+            }
+
+            callStatePollerRunning = false
+        }
+    }
+
     private fun startCapture() {
         if (isRecording) return
+        if (!monitorEnabled) {
+            lastCaptureStatus = "monitor_disabled"
+            return
+        }
+        if (!isInCall && !isVoiceSessionActive()) {
+            lastCaptureStatus = "waiting_for_call"
+            return
+        }
+        isInCall = true
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            lastCaptureStatus = "record_audio_missing"
             Log.w(TAG, "RECORD_AUDIO permission not granted; capture not started")
             return
         }
@@ -194,6 +332,7 @@ class AegisCallMonitor : Service() {
         )
 
         if (minBuffer == AudioRecord.ERROR || minBuffer == AudioRecord.ERROR_BAD_VALUE) {
+            lastCaptureStatus = "audio_min_buffer_failed"
             Log.e(TAG, "AudioRecord min buffer size query failed")
             return
         }
@@ -209,11 +348,13 @@ class AegisCallMonitor : Service() {
                 bufferSize
             )
         } catch (e: Exception) {
+            lastCaptureStatus = "audio_record_init_exception:${e.javaClass.simpleName}"
             Log.e(TAG, "AudioRecord initialization failed", e)
             return
         }
 
         if (newRecord.state != AudioRecord.STATE_INITIALIZED) {
+            lastCaptureStatus = "audio_record_not_initialized"
             Log.e(TAG, "AudioRecord not initialized")
             newRecord.release()
             return
@@ -222,6 +363,7 @@ class AegisCallMonitor : Service() {
         try {
             newRecord.startRecording()
         } catch (e: IllegalStateException) {
+            lastCaptureStatus = "audio_record_start_failed"
             Log.e(TAG, "Failed to start recording", e)
             newRecord.release()
             return
@@ -229,6 +371,9 @@ class AegisCallMonitor : Service() {
 
         audioRecord = newRecord
         isRecording = true
+        audioCaptureRunning = true
+        lastCaptureAtMs = System.currentTimeMillis()
+        lastCaptureStatus = "capturing"
 
         if (wakeLock?.isHeld != true) {
             wakeLock?.acquire()
@@ -241,6 +386,7 @@ class AegisCallMonitor : Service() {
                 val read = try {
                     audioRecord?.read(buffer, 0, CHUNK_SAMPLES) ?: break
                 } catch (e: Exception) {
+                    lastCaptureStatus = "audio_read_failed:${e.javaClass.simpleName}"
                     Log.e(TAG, "AudioRecord read failed", e)
                     break
                 }
@@ -259,16 +405,22 @@ class AegisCallMonitor : Service() {
 
                     val pitchVar = computePitchVariance(window)
                     val zcr = computeZeroCrossingRate(window)
+                    val rms = computeRms(window)
                     val spectralGap = computeSpectralGapPlaceholder(window)
                     
                     // Simple multi-signal gating logic
                     val zcrTrigger = zcr > 0.15f
                     val gapTrigger = spectralGap > 0.8f
                     val combinedSpectralScore = if (pitchVar < FLAT_PITCH_THRESHOLD || zcrTrigger || gapTrigger) 0.0f else 1.0f
+                    val speechActive = rms >= 0.0035f
 
                     detector?.onSpectralEnergyUpdate(combinedSpectralScore)
 
-                    if (detector?.shouldActivate() == true) {
+                    val now = SystemClock.elapsedRealtime()
+                    val canRunLocal = !localAnalyzeInFlight && (now - lastLocalAnalyzeAtMs >= LOCAL_ANALYZE_INTERVAL_MS)
+                    if (speechActive && detector?.shouldActivate() == true && canRunLocal) {
+                        localAnalyzeInFlight = true
+                        lastLocalAnalyzeAtMs = now
                         serviceScope.launch(Dispatchers.Default) {
                             try {
                                 Log.d("IntentFirewall", "Starting audio detection analysis")
@@ -279,8 +431,16 @@ class AegisCallMonitor : Service() {
                                 }
                             } catch (e: Exception) {
                                 Log.e("IntentFirewall", "Audio detection failed: ${e.message}", e)
+                            } finally {
+                                localAnalyzeInFlight = false
                             }
                         }
+                    }
+
+                    if (speechActive) {
+                        maybeRunTier3VoiceIntent(window, pitchVar, zcr)
+                    } else {
+                        lastTier3Status = "speech_inactive_skip"
                     }
 
                     System.arraycopy(
@@ -300,6 +460,7 @@ class AegisCallMonitor : Service() {
 
     private fun stopCapture() {
         isRecording = false
+        audioCaptureRunning = false
 
         val record = audioRecord
         audioRecord = null
@@ -373,7 +534,131 @@ class AegisCallMonitor : Service() {
         return 0.1f // Default safe value
     }
 
+    private fun computeRms(window: FloatArray): Float {
+        if (window.isEmpty()) return 0f
+        var sum = 0f
+        for (v in window) {
+            sum += v * v
+        }
+        return kotlin.math.sqrt(sum / window.size)
+    }
+
+    private fun maybeRunTier3VoiceIntent(window: FloatArray, pitchVar: Float, zcr: Float) {
+        val now = SystemClock.elapsedRealtime()
+        if (geminiVoiceInFlight) return
+        if (now - lastGeminiVoiceAtMs < GEMINI_WINDOW_INTERVAL_MS) return
+
+        geminiVoiceInFlight = true
+        lastGeminiVoiceAtMs = now
+        lastTier3AtMs = System.currentTimeMillis()
+        lastTier3Status = "request_started"
+
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                val decision = GeminiVoiceScamClassifier.analyzeLiveWindow(
+                    context = this@AegisCallMonitor,
+                    waveform = window,
+                    callerUnknown = true,
+                    pitchVariance = pitchVar,
+                    zcr = zcr,
+                    localSyntheticScore = lastLocalSyntheticScore,
+                )
+
+                if (decision != null) {
+                        NotificationEventEmitter.sendNotification(
+                            context = this@AegisCallMonitor,
+                            appName = "Call Monitor",
+                            title = "Live voice analysis",
+                            text = decision.reason,
+                            packageName = packageName,
+                            flagged = decision.isScam || decision.action == "alert",
+                            matchedCategory = decision.intent,
+                            conversationContext = "",
+                            confidence = decision.confidence,
+                            sender = "Live Call",
+                            appSource = "call",
+                            captureMethod = "call_audio",
+                            eventTimestamp = System.currentTimeMillis(),
+                            tierUsed = "tier3-voice",
+                            tier1Score = 0.0f,
+                            tier1Decision = "DISABLED",
+                            tier1Category = "DISABLED",
+                            tier3Reason = decision.reason,
+                            tier3Model = decision.model,
+                            tier3KeyIndex = decision.keyIndex,
+                        )
+
+                    val intent = Intent(ACTION_VOICE_SCAM_INTENT).apply {
+                        putExtra("isScam", decision.isScam)
+                        putExtra("confidence", decision.confidence)
+                        putExtra("intent", decision.intent)
+                        putExtra("reason", decision.reason)
+                        putExtra("action", decision.action)
+                        putExtra("model", decision.model)
+                        putExtra("keyIndex", decision.keyIndex)
+                    }
+                    LocalBroadcastManager.getInstance(this@AegisCallMonitor).sendBroadcast(intent)
+
+                    if (decision.isScam || decision.action == "alert") {
+                        lastTier3Status = "alert:${decision.intent}:${decision.confidence}"
+                        maybeNotifyVoiceScam(decision)
+                        Log.w(
+                            TAG,
+                            "Tier3 voice alert intent=${decision.intent} confidence=${decision.confidence} reason=${decision.reason}"
+                        )
+                    } else {
+                        lastTier3Status = "safe:${decision.intent}:${decision.confidence}"
+                        Log.d(
+                            TAG,
+                            "Tier3 voice safe intent=${decision.intent} confidence=${decision.confidence}"
+                        )
+                    }
+                } else {
+                    lastTier3Status = "no_decision:${GeminiVoiceScamClassifier.lastRunStatus}"
+                }
+            } catch (e: Exception) {
+                lastTier3Status = "request_failed:${e.javaClass.simpleName}"
+                Log.e(TAG, "Tier3 voice intent analysis failed: ${e.message}", e)
+            } finally {
+                geminiVoiceInFlight = false
+            }
+        }
+    }
+
+    private fun isVoiceSessionActive(): Boolean {
+        val telephonyState = telephonyManager?.callState ?: TelephonyManager.CALL_STATE_IDLE
+        if (telephonyState == TelephonyManager.CALL_STATE_OFFHOOK) {
+            return true
+        }
+
+        val mode = audioManager?.mode ?: AudioManager.MODE_NORMAL
+        return mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION
+    }
+
+    private fun maybeNotifyVoiceScam(decision: GeminiVoiceDecision) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastVoiceAlertAtMs < ALERT_COOLDOWN_MS) return
+        lastVoiceAlertAtMs = now
+
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        val title = "Live call scam risk detected"
+        val body = "Intent: ${decision.intent} (${(decision.confidence * 100).toInt()}%)"
+
+        val notification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$body\n${decision.reason}"))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setAutoCancel(true)
+            .build()
+
+        manager.notify(VOICE_ALERT_NOTIFICATION_ID, notification)
+    }
+
     private fun onDetectionResult(result: DetectionResult) {
+        lastLocalSyntheticScore = result.confidence
         if (result.isSynthetic) {
             Log.w(TAG, "DEEPFAKE DETECTED confidence=${result.confidence}")
 

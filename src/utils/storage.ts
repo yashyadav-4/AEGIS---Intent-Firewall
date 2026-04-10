@@ -5,6 +5,7 @@ export interface Threat {
   app: string;
   appIcon: string;
   message: string;
+  context?: string;
   category: string;
   confidence: number;
   blocked: boolean;
@@ -109,7 +110,8 @@ export const saveThreat = async (
 export const getThreats = async (): Promise<Threat[]> => {
   try {
     const data = await AsyncStorage.getItem(THREATS_KEY);
-    return data ? JSON.parse(data) : [];
+    const parsed: Threat[] = data ? JSON.parse(data) : [];
+    return parsed.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   } catch (e) {
     console.error('Error getting threats:', e);
     return [];
@@ -253,7 +255,8 @@ export const saveMessageEvent = async (
 export const getMessageEvents = async (): Promise<MessageEvent[]> => {
   try {
     const data = await AsyncStorage.getItem(MESSAGES_KEY);
-    return data ? JSON.parse(data) : [];
+    const parsed: MessageEvent[] = data ? JSON.parse(data) : [];
+    return parsed.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
   } catch (e) {
     console.error('Error getting message events:', e);
     return [];

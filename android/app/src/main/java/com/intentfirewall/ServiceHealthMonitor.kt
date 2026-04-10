@@ -37,6 +37,16 @@ object ServiceHealthMonitor {
     private var lastSmsFallbackEventAt = 0L
     private var lastHealthLogAt = 0L
 
+    data class HealthSnapshot(
+        val notificationEnabled: Boolean,
+        val notificationConnected: Boolean,
+        val accessibilityEnabled: Boolean,
+        val accessibilityConnected: Boolean,
+        val lastNotificationEventAt: Long,
+        val lastAccessibilityEventAt: Long,
+        val lastSmsFallbackEventAt: Long,
+    )
+
     private val healthRunnable = object : Runnable {
         override fun run() {
             val context = appContext
@@ -115,6 +125,23 @@ object ServiceHealthMonitor {
         if (accessibilityHealthy) return "accessibility"
 
         return "sms_fallback"
+    }
+
+    fun getSnapshot(context: Context): HealthSnapshot {
+        val notificationEnabled = isNotificationListenerEnabled(context)
+        val accessibilityEnabled = isAccessibilityServiceEnabled(context)
+
+        synchronized(lock) {
+            return HealthSnapshot(
+                notificationEnabled = notificationEnabled,
+                notificationConnected = notificationConnected,
+                accessibilityEnabled = accessibilityEnabled,
+                accessibilityConnected = accessibilityConnected,
+                lastNotificationEventAt = lastNotificationEventAt,
+                lastAccessibilityEventAt = lastAccessibilityEventAt,
+                lastSmsFallbackEventAt = lastSmsFallbackEventAt,
+            )
+        }
     }
 
     private fun runHealthCheck(context: Context) {

@@ -200,21 +200,27 @@ const HistoryScreen = () => {
             ) : (
               filtered.map((threat) => (
                 <View key={threat.id} style={styles.threatCard}>
-                  <View style={styles.threatLeft}>
-                    <Text style={styles.threatAppIcon}>{threat.appIcon}</Text>
-                    <View>
-                      <Text style={styles.threatApp}>{threat.app}</Text>
-                      <Text style={styles.threatTime}>{threat.time}</Text>
+                  <View style={styles.threatTopRow}>
+                    <View style={styles.threatLeft}>
+                      <Text style={styles.threatAppIcon}>{threat.appIcon}</Text>
+                      <View>
+                        <Text style={styles.threatApp}>{threat.app}</Text>
+                        <Text style={styles.threatTime}>{formatTime(threat.timestamp)}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.rightCol}>
+                      <View style={styles.threatBadge}>
+                        <Text style={styles.threatBadgeText}>{threat.category}</Text>
+                      </View>
+                      <Text style={[styles.status, threat.blocked ? styles.blocked : styles.allowed]}>
+                        {threat.blocked ? '🚫 Blocked' : '⚠️ Allowed'}
+                      </Text>
                     </View>
                   </View>
-                  <View style={styles.rightCol}>
-                    <View style={styles.threatBadge}>
-                      <Text style={styles.threatBadgeText}>{threat.category}</Text>
-                    </View>
-                    <Text style={[styles.status, threat.blocked ? styles.blocked : styles.allowed]}>
-                      {threat.blocked ? '🚫 Blocked' : '⚠️ Allowed'}
-                    </Text>
-                  </View>
+                  <Text style={styles.threatMessage}>{threat.message || '[Empty message]'}</Text>
+                  {threat.context ? (
+                    <Text style={styles.threatContext}>Context: {threat.context}</Text>
+                  ) : null}
                 </View>
               ))
             )}
@@ -339,13 +345,29 @@ const styles = StyleSheet.create({
   emptySubText: {fontSize: 13, color: '#A0AEC0', marginTop: 4},
   threatCard: {
     backgroundColor: '#16213E', borderRadius: 12, padding: 14,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginBottom: 8, borderWidth: 1, borderColor: '#E6394620',
+  },
+  threatTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   threatLeft: {flexDirection: 'row', alignItems: 'center'},
   threatAppIcon: {fontSize: 24, marginRight: 12},
   threatApp: {fontSize: 14, fontWeight: '600', color: '#fff'},
   threatTime: {fontSize: 11, color: '#A0AEC0', marginTop: 2},
+  threatMessage: {
+    fontSize: 12,
+    color: '#D0D7E7',
+    marginTop: 10,
+    lineHeight: 18,
+  },
+  threatContext: {
+    fontSize: 11,
+    color: '#AFC8FF',
+    marginTop: 8,
+    lineHeight: 16,
+  },
   rightCol: {alignItems: 'flex-end', gap: 4},
   messageCard: {
     backgroundColor: '#16213E',

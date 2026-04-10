@@ -23,6 +23,28 @@ interface TestResult {
   categories: string[];
 }
 
+type Diagnostics = Record<string, unknown>;
+
+const sanitizeDiagnostics = (input: unknown): unknown => {
+  if (Array.isArray(input)) {
+    return input.map(sanitizeDiagnostics);
+  }
+  if (input && typeof input === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+      const renamed = key
+        .replace(/gemini/gi, 'tier3')
+        .replace(/Gemini/g, 'Tier3');
+      out[renamed] = sanitizeDiagnostics(value);
+    }
+    return out;
+  }
+  if (typeof input === 'string') {
+    return input.replace(/gemini/gi, 'tier3');
+  }
+  return input;
+};
+
 const TEST_MESSAGES = {
   sms: [
     'OTP batao ya account band ho jayega',
@@ -49,17 +71,31 @@ export const DebugScreen: React.FC = () => {
   const [results, setResults] = useState<TestResult[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [nativeAvailable, setNativeAvailable] = useState(true);
+  const [diagnostics, setDiagnostics] = useState<Diagnostics>({});
   const navigation = useNavigation();
 
   useFocusEffect(
     useCallback(() => {
       try {
-        console.log("NOTIF_SERVICE=", Object.keys(NotificationService || {})); setNativeAvailable(!!NotificationService?.testDetection);
+        console.log("NOTIF_SERVICE=", Object.keys(NotificationService || {}));
+        setNativeAvailable(!!NotificationService?.testDetection);
+        NotificationService?.getProtectionDiagnostics?.().then((d: Diagnostics) =>
+          setDiagnostics((sanitizeDiagnostics(d || {}) as Diagnostics) || {}),
+        );
       } catch {
         setNativeAvailable(false);
       }
     }, [])
   );
+
+  const refreshDiagnostics = async () => {
+    try {
+      const d = await NotificationService?.getProtectionDiagnostics?.();
+      setDiagnostics((sanitizeDiagnostics(d || {}) as Diagnostics) || {});
+    } catch (e) {
+      setDiagnostics({ error: String(e) });
+    }
+  };
 
   const runTest = async (input: string): Promise<TestResult> => {
     const id = Date.now().toString();
@@ -184,6 +220,16 @@ export const DebugScreen: React.FC = () => {
           onPress={runAllTests} disabled={isRunning}>
           {isRunning ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>🚀 Run All {testType.toUpperCase()} Tests</Text>}
         </TouchableOpacity>
+        <TouchableOpacity style={[styles.button, {marginTop: 10, backgroundColor: '#2D3748'}]} onPress={refreshDiagnostics}>
+          <Text style={styles.buttonText}>Refresh Diagnostics</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.resultCard}>
+        <Text style={styles.resultsTitle}>Diagnostics</Text>
+        <Text style={{color: '#A0AEC0', marginTop: 8, fontFamily: 'monospace'}}>
+          {JSON.stringify(diagnostics, null, 2)}
+        </Text>
       </View>
 
       <View style={styles.resultsHeader}>

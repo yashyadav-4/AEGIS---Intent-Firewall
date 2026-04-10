@@ -24,6 +24,11 @@ const toPercent = (value: unknown): number => {
 const normalizeThreatCategory = (matchedCategory: string): string => {
   if (!matchedCategory) return 'SCAM_SUSPECT';
 
+  const normalized = matchedCategory.trim().toUpperCase();
+  if (normalized === 'OTHER') {
+    return 'SCAM_SUSPECT';
+  }
+
   if (matchedCategory.startsWith('OPEN_CHAT_')) {
     return matchedCategory
       .replace('OPEN_CHAT_', '')
@@ -57,19 +62,34 @@ const App = () => {
   useEffect(() => {
     let isDraining = false;
 
+    const asSafeString = (value: unknown): string => {
+      if (value == null) {
+        return '';
+      }
+      try {
+        return String(value);
+      } catch {
+        return '';
+      }
+    };
+
     const processIncomingEvent = async (data: any) => {
       if (!data || typeof data !== 'object') {
         console.warn('[HistoryPipeline] Ignoring malformed event:', data);
         return;
       }
 
-      const isOpenChatCategory = String(data.matchedCategory || '').startsWith('OPEN_CHAT');
-      const captureMethod = String(data.captureMethod || '').toLowerCase();
+      const appName = asSafeString(data.appName) || 'Unknown';
+      const text = asSafeString(data.text);
+      const packageName = asSafeString(data.packageName);
+      const rawMatchedCategory = asSafeString(data.matchedCategory);
+      const isOpenChatCategory = rawMatchedCategory.startsWith('OPEN_CHAT');
+      const captureMethod = asSafeString(data.captureMethod).toLowerCase();
       const eventTimestamp = Number(data.timestamp);
       const normalizedEventTimestamp = Number.isFinite(eventTimestamp)
         ? Math.floor(eventTimestamp)
         : Date.now();
-      const threatCategory = normalizeThreatCategory(String(data.matchedCategory || ''));
+      const threatCategory = normalizeThreatCategory(rawMatchedCategory);
 
       const source =
         captureMethod === 'accessibility' || isOpenChatCategory
@@ -78,32 +98,73 @@ const App = () => {
             ? 'sms_direct'
             : 'notification';
 
-      await saveMessageEvent({
-        app: data.appName,
-        appIcon: APP_ICONS[data.appName] || '📩',
-        title: getMessageTitle(data, isOpenChatCategory),
-        message: data.text || '',
-        packageName: data.packageName || '',
-        matchedCategory: threatCategory,
-        flagged: data.flagged === true,
-        source,
-        time: 'Just now',
-        eventTimestamp: normalizedEventTimestamp,
-      });
+      try {
+        await saveMessageEvent({
+          app: appName,
+          appIcon: APP_ICONS[appName] || '📩',
+          title: getMessageTitle({...data, appName, text}, isOpenChatCategory),
+          message: text,
+          packageName,
+          matchedCategory: threatCategory,
+          flagged: data.flagged === true,
+          source,
+          time: 'Just now',
+          eventTimestamp: normalizedEventTimestamp,
+        });
+      } catch (saveErr) {
+        console.warn('[HistoryPipeline] saveMessageEvent failed, using fallback:', saveErr);
+        await saveMessageEvent({
+          app: appName,
+          appIcon: APP_ICONS[appName] || '📩',
+          title: appName,
+          message: text || '[Empty message]',
+          packageName,
+          matchedCategory: rawMatchedCategory || 'UNKNOWN',
+          flagged: data.flagged === true,
+          source,
+          time: 'Just now',
+          eventTimestamp: normalizedEventTimestamp,
+        });
+      }
 
       console.log(
         '[HistoryPipeline] Saved message event:',
-        data.appName,
+        appName,
         source,
         normalizedEventTimestamp,
       );
 
+      console.log(
+        '[TierTrace] tierUsed=',
+        data.tierUsed || 'tier1',
+        'tier1Decision=',
+        data.tier1Decision || 'ALLOW',
+        'tier1Score=',
+        Number(data.tier1Score || 0).toFixed(3),
+        'tier1Category=',
+        data.tier1Category || 'NONE',
+        'tier3Model=',
+        data.tier3Model || data.geminiModel || 'n/a',
+        'tier3KeyIndex=',
+        Number(data.tier3KeyIndex || data.geminiKeyIndex || 0),
+        'tier3Reason=',
+        data.tier3Reason || data.geminiReason || '',
+        'app=',
+        appName,
+        'capture=',
+        captureMethod || 'notification',
+        'flagged=',
+        data.flagged === true,
+      );
+
       if (data.flagged === true) {
         const settings = await getSettings();
+        const contextText = String(data.context || '').trim();
         await saveThreat({
-          app: data.appName,
-          appIcon: APP_ICONS[data.appName] || '📩',
-          message: data.text || '',
+          app: appName,
+          appIcon: APP_ICONS[appName] || '📩',
+          message: text,
+          context: contextText,
           category: threatCategory,
           confidence: toPercent(data.confidence),
           blocked: settings.autoBlock,
@@ -111,7 +172,7 @@ const App = () => {
           timestamp: normalizedEventTimestamp,
         });
 
-        console.log('[HistoryPipeline] Saved threat event:', data.appName, threatCategory);
+        console.log('[HistoryPipeline] Saved threat event:', appName, threatCategory);
       }
     };
 
@@ -157,7 +218,11 @@ const App = () => {
         console.log('[HistoryPipeline] Draining buffered events count:', pendingList.length);
 
         for (const item of pendingList) {
-          await processIncomingEvent(item);
+          try {
+            await processIncomingEvent(item);
+          } catch (itemErr) {
+            console.warn('[HistoryPipeline] Failed to process drained event:', itemErr, item);
+          }
         }
       } catch (error) {
         console.warn('Failed to drain buffered notifications:', error);

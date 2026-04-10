@@ -42,7 +42,7 @@ object ScamAlertNotifier {
         val normalized = message.trim().lowercase().replace("\\s+".toRegex(), " ")
         if (normalized.isBlank()) return
 
-        val key = "$appName|$category|$normalized"
+        val key = "$appName|$normalized"
         val now = System.currentTimeMillis()
         val prefs = context.getSharedPreferences("scam_alert_notifier", Context.MODE_PRIVATE)
         val lastShownAt = prefs.getLong("last_$key", 0L)
@@ -84,8 +84,9 @@ object ScamAlertNotifier {
         )
 
         val confidencePercent = (confidence * 100).toInt().coerceIn(0, 99)
-        val body = if (category.isNotBlank()) {
-            "$category detected in $appName: $message"
+        val userCategory = displayCategory(category)
+        val body = if (userCategory.isNotBlank()) {
+            "$userCategory detected in $appName: $message"
         } else {
             "Potential scam detected in $appName: $message"
         }
@@ -127,5 +128,13 @@ object ScamAlertNotifier {
         }
 
         manager.createNotificationChannel(channel)
+    }
+
+    private fun displayCategory(category: String): String {
+        val normalized = category.trim().uppercase()
+        if (normalized.isBlank()) return ""
+        if (normalized.contains("TIER3")) return "Scam Risk"
+        if (normalized == "OTHER" || normalized == "SAFE") return "Scam Risk"
+        return normalized.replace("_", " ")
     }
 }

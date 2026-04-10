@@ -26,6 +26,13 @@ object NotificationEventEmitter {
         appSource: String = appName,
         captureMethod: String = "notification",
         eventTimestamp: Long = System.currentTimeMillis(),
+        tierUsed: String = "tier1",
+        tier1Score: Float = 0.0f,
+        tier1Decision: String = "ALLOW",
+        tier1Category: String = "NONE",
+        tier3Reason: String = "",
+        tier3Model: String = "",
+        tier3KeyIndex: Int = 0,
     ) {
         try {
             val emittedAt = if (eventTimestamp > 0L) eventTimestamp else System.currentTimeMillis()
@@ -45,6 +52,13 @@ object NotificationEventEmitter {
                 sender = sender,
                 appSource = appSource,
                 captureMethod = captureMethod,
+                tierUsed = tierUsed,
+                tier1Score = tier1Score,
+                tier1Decision = tier1Decision,
+                tier1Category = tier1Category,
+                tier3Reason = tier3Reason,
+                tier3Model = tier3Model,
+                tier3KeyIndex = tier3KeyIndex,
             )
 
             val reactApplication = context.applicationContext as ReactApplication
@@ -68,6 +82,13 @@ object NotificationEventEmitter {
                 putString("sender", sender)
                 putString("appSource", appSource)
                 putString("captureMethod", captureMethod)
+                putString("tierUsed", tierUsed)
+                putDouble("tier1Score", tier1Score.toDouble())
+                putString("tier1Decision", tier1Decision)
+                putString("tier1Category", tier1Category)
+                putString("tier3Reason", tier3Reason)
+                putString("tier3Model", tier3Model)
+                putInt("tier3KeyIndex", tier3KeyIndex)
             }
 
             reactContext
@@ -106,6 +127,13 @@ object NotificationEventEmitter {
         sender: String,
         appSource: String,
         captureMethod: String,
+        tierUsed: String,
+        tier1Score: Float,
+        tier1Decision: String,
+        tier1Category: String,
+        tier3Reason: String,
+        tier3Model: String,
+        tier3KeyIndex: Int,
     ) {
         synchronized(this) {
             val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
@@ -129,6 +157,13 @@ object NotificationEventEmitter {
                 put("sender", sender)
                 put("appSource", appSource)
                 put("captureMethod", captureMethod)
+                put("tierUsed", tierUsed)
+                put("tier1Score", tier1Score.toDouble())
+                put("tier1Decision", tier1Decision)
+                put("tier1Category", tier1Category)
+                put("tier3Reason", tier3Reason)
+                put("tier3Model", tier3Model)
+                put("tier3KeyIndex", tier3KeyIndex)
             }
 
             val updated = JSONArray().apply {

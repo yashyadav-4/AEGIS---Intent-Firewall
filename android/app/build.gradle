@@ -72,6 +72,46 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+def localProps = new Properties()
+def localPropsFile = rootProject.file('local.properties')
+if (localPropsFile.exists()) {
+    localPropsFile.withInputStream { stream ->
+        localProps.load(stream)
+    }
+}
+
+def serviceKeyFile = rootProject.file('../src/services/key.js')
+def geminiKeysFromServiceFile = []
+if (serviceKeyFile.exists()) {
+    def keyJs = serviceKeyFile.getText('UTF-8')
+    def apiKeysBlock = (keyJs =~ /(?s)API_KEYS\s*=\s*\[(.*?)\]/)
+    if (apiKeysBlock.find()) {
+        def inner = apiKeysBlock.group(1)
+        def keyMatcher = (inner =~ /["']([^"']+)["']/)
+        while (keyMatcher.find()) {
+            def candidate = keyMatcher.group(1)?.trim()
+            if (candidate) {
+                geminiKeysFromServiceFile << candidate
+            }
+        }
+    }
+}
+
+def geminiApiKeysRaw = geminiKeysFromServiceFile
+    ? geminiKeysFromServiceFile.join(',')
+    : localProps.getProperty('GEMINI_API_KEYS', System.getenv('GEMINI_API_KEYS') ?: localProps.getProperty('GEMINI_API_KEY', System.getenv('GEMINI_API_KEY') ?: ''))
+
+def geminiApiKeyRaw = geminiKeysFromServiceFile
+    ? geminiKeysFromServiceFile[0]
+    : localProps.getProperty('GEMINI_API_KEY', System.getenv('GEMINI_API_KEY') ?: '')
+
+def geminiApiKeyEscaped = geminiApiKeyRaw.replace('\\', '\\\\').replace('"', '\\"')
+def geminiApiKeysEscaped = geminiApiKeysRaw.replace('\\', '\\\\').replace('"', '\\"')
+def geminiModelRaw = localProps.getProperty('GEMINI_MODEL', System.getenv('GEMINI_MODEL') ?: 'gemini-3.1-flash-lite-preview')
+def geminiModelEscaped = geminiModelRaw.replace('\\', '\\\\').replace('"', '\\"')
+def geminiVoiceModelRaw = localProps.getProperty('GEMINI_VOICE_MODEL', System.getenv('GEMINI_VOICE_MODEL') ?: 'gemini-2.0-flash')
+def geminiVoiceModelEscaped = geminiVoiceModelRaw.replace('\\', '\\\\').replace('"', '\\"')
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -84,13 +124,17 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "2.0"
+        buildConfigField "String", "GEMINI_API_KEY", "\"${geminiApiKeyEscaped}\""
+        buildConfigField "String", "GEMINI_API_KEYS", "\"${geminiApiKeysEscaped}\""
+        buildConfigField "String", "GEMINI_MODEL", "\"${geminiModelEscaped}\""
+        buildConfigField "String", "GEMINI_VOICE_MODEL", "\"${geminiVoiceModelEscaped}\""
         ndk {
             abiFilters "arm64-v8a", "armeabi-v7a"
         }
     }
     applicationVariants.all { variant ->
         variant.outputs.all {
-            outputFileName = "intent-firewall-v2.apk"
+            outputFileName = "intent-firewall-v5.apk"
         }
     }
     signingConfigs {

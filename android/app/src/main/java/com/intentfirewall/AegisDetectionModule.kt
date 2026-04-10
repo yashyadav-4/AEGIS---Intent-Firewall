@@ -106,22 +106,7 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
         try {
             val context = reactApplicationContext
             val expectedClass = OpenChatAccessibilityService::class.java.name
-
-            val accessibilityManager =
-                context.getSystemService(AccessibilityManager::class.java)
-                    ?: throw IllegalStateException("AccessibilityManager unavailable")
-            val activeServices =
-                accessibilityManager.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
-
-            for (service in activeServices) {
-                val info = service.resolveInfo?.serviceInfo ?: continue
-                if (info.packageName == context.packageName && info.name == expectedClass) {
-                    promise.resolve(true)
-                    return
-                }
-            }
-
-            // Fallback to secure settings parsing for OEM variants.
+            // Primary: secure settings parsing is usually most stable across OEM builds.
             val enabled = Settings.Secure.getInt(
                 context.contentResolver,
                 Settings.Secure.ACCESSIBILITY_ENABLED,
@@ -153,6 +138,27 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
                 ) {
                     promise.resolve(true)
                     return
+                }
+            }
+
+            // Secondary: active service list for live runtime validation.
+            val accessibilityManager = context.getSystemService(AccessibilityManager::class.java)
+            if (accessibilityManager != null) {
+                val activeServices = accessibilityManager.getEnabledAccessibilityServiceList(
+                    AccessibilityServiceInfo.FEEDBACK_ALL_MASK
+                )
+
+                for (service in activeServices) {
+                    val info = service.resolveInfo?.serviceInfo ?: continue
+                    val serviceName = info.name
+                    val matchesClass =
+                        serviceName == expectedClass ||
+                            serviceName == ".${OpenChatAccessibilityService::class.java.simpleName}"
+
+                    if (info.packageName == context.packageName && matchesClass) {
+                        promise.resolve(true)
+                        return
+                    }
                 }
             }
 
@@ -239,6 +245,131 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
     }
 
     @ReactMethod
+    fun checkPhoneStatePermission(promise: Promise) {
+        val granted = ContextCompat.checkSelfPermission(
+            reactApplicationContext,
+            Manifest.permission.READ_PHONE_STATE
+        ) == PackageManager.PERMISSION_GRANTED
+        promise.resolve(granted)
+    }
+
+    @ReactMethod
+    fun requestPhoneStatePermission(promise: Promise) {
+        val activity = getCurrentActivity()
+        if (activity != null) {
+            ActivityCompat.requestPermissions(
+                activity,
+                arrayOf(Manifest.permission.READ_PHONE_STATE),
+                1004
+            )
+        }
+        promise.resolve(true)
+    }
+
+    @ReactMethod
+    fun startCallProtection(promise: Promise) {
+        try {
+            val context = reactApplicationContext
+            val micGranted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+            val phoneStateGranted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_PHONE_STATE
+            ) == PackageManager.PERMISSION_GRANTED
+
+            if (!micGranted || !phoneStateGranted) {
+                promise.resolve(false)
+                return
+            }
+
+            val intent = Intent(context, AegisCallMonitor::class.java).apply {
+                action = AegisCallMonitor.ACTION_START
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+
+            promise.resolve(true)
+        } catch (se: SecurityException) {
+            Log.e("AegisDetectionModule", "Failed to start call protection (security)", se)
+            promise.resolve(false)
+        } catch (e: Exception) {
+            Log.e("AegisDetectionModule", "Failed to start call protection", e)
+            promise.resolve(false)
+        }
+    }
+
+    @ReactMethod
+    fun stopCallProtection(promise: Promise) {
+        try {
+            val context = reactApplicationContext
+            val intent = Intent(context, AegisCallMonitor::class.java).apply {
+                action = AegisCallMonitor.ACTION_STOP
+            }
+            context.startService(intent)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e("AegisDetectionModule", "Failed to stop call protection", e)
+            promise.resolve(false)
+        }
+    }
+
+    @ReactMethod
+    fun isCallProtectionRunning(promise: Promise) {
+        promise.resolve(AegisCallMonitor.isServiceRunning)
+    }
+
+    @ReactMethod
+    fun getProtectionDiagnostics(promise: Promise) {
+        try {
+            val context = reactApplicationContext
+            val snapshot = ServiceHealthMonitor.getSnapshot(context)
+            val micGranted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+            val phoneStateGranted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_PHONE_STATE
+            ) == PackageManager.PERMISSION_GRANTED
+            val hasApiKey = BuildConfig.GEMINI_API_KEYS.isNotBlank() || BuildConfig.GEMINI_API_KEY.isNotBlank()
+
+            val out = Arguments.createMap().apply {
+                putBoolean("callProtectionRunning", AegisCallMonitor.isServiceRunning)
+                putBoolean("callMonitorArmed", AegisCallMonitor.monitorArmed)
+                putBoolean("inCallDetected", AegisCallMonitor.inCallDetected)
+                putBoolean("audioCaptureRunning", AegisCallMonitor.audioCaptureRunning)
+                putBoolean("micGranted", micGranted)
+                putBoolean("phoneStateGranted", phoneStateGranted)
+                putBoolean("notificationEnabled", snapshot.notificationEnabled)
+                putBoolean("notificationConnected", snapshot.notificationConnected)
+                putBoolean("accessibilityEnabled", snapshot.accessibilityEnabled)
+                putBoolean("accessibilityConnected", snapshot.accessibilityConnected)
+                putDouble("lastNotificationEventAt", snapshot.lastNotificationEventAt.toDouble())
+                putDouble("lastAccessibilityEventAt", snapshot.lastAccessibilityEventAt.toDouble())
+                putDouble("lastSmsFallbackEventAt", snapshot.lastSmsFallbackEventAt.toDouble())
+                putString("lastCaptureStatus", AegisCallMonitor.lastCaptureStatus)
+                putDouble("lastCaptureAtMs", AegisCallMonitor.lastCaptureAtMs.toDouble())
+                putString("lastTier3Status", AegisCallMonitor.lastTier3Status)
+                putDouble("lastTier3AtMs", AegisCallMonitor.lastTier3AtMs.toDouble())
+                putBoolean("tier3ApiKeyConfigured", hasApiKey)
+                putString("tier3TextModel", BuildConfig.GEMINI_MODEL)
+                putString("tier3VoiceModel", BuildConfig.GEMINI_VOICE_MODEL)
+            }
+
+            promise.resolve(out)
+        } catch (e: Exception) {
+            Log.e("AegisDetectionModule", "getProtectionDiagnostics failed", e)
+            promise.resolve(Arguments.createMap())
+        }
+    }
+
+    @ReactMethod
     fun simulateCall(phoneNumber: String, isIncoming: Boolean, durationMs: Int, promise: Promise) {
         val result = Arguments.createMap().apply {
             putBoolean("deepfakeDetected", false)
@@ -271,6 +402,13 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
                     putString("sender", item.optString("sender", ""))
                     putString("appSource", item.optString("appSource", ""))
                     putString("captureMethod", item.optString("captureMethod", "notification"))
+                    putString("tierUsed", item.optString("tierUsed", "tier1"))
+                    putDouble("tier1Score", item.optDouble("tier1Score", 0.0))
+                    putString("tier1Decision", item.optString("tier1Decision", "ALLOW"))
+                    putString("tier1Category", item.optString("tier1Category", "NONE"))
+                    putString("tier3Reason", item.optString("tier3Reason", item.optString("geminiReason", "")))
+                    putString("tier3Model", item.optString("tier3Model", item.optString("geminiModel", "")))
+                    putInt("tier3KeyIndex", item.optInt("tier3KeyIndex", item.optInt("geminiKeyIndex", 0)))
                 }
                 out.pushMap(map)
             }

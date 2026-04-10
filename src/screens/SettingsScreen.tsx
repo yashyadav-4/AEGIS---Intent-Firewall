@@ -7,7 +7,10 @@ import {
   promptNotificationListenerSetup,
   promptAccessibilityServiceSetup,
   openPermissionSettings,
-  requestAllRequiredPermissions
+  requestAllRequiredPermissions,
+  startCallProtection,
+  stopCallProtection,
+  isCallProtectionRunning,
 } from '../utils/permissionManager';
 import {getSettings, saveSettings, clearThreats} from '../utils/storage';
 
@@ -19,6 +22,7 @@ const SettingsScreen = () => {
     accessibilityService: false,
     callScreening: false,
     audioRecording: false,
+    phoneState: false,
     sms: false,
   });
 
@@ -26,12 +30,15 @@ const SettingsScreen = () => {
   const [autoBlock, setAutoBlock] = useState(false);
   const [vibration, setVibration] = useState(true);
   const [strictMode, setStrictMode] = useState(false);
+  const [callProtectionRunning, setCallProtectionRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadPermissions = async () => {
     try {
       const status = await getAllPermissionStatus();
       setPermissions(status);
+      const running = await isCallProtectionRunning();
+      setCallProtectionRunning(running);
     } catch (error) {
       console.error('Failed to load permissions:', error);
     }
@@ -78,6 +85,7 @@ const SettingsScreen = () => {
 
     if (
       result.audioRecording &&
+      result.phoneState &&
       result.callScreening &&
       result.notification &&
       result.sms &&
@@ -102,6 +110,40 @@ const SettingsScreen = () => {
       console.error(err);
     }
   }
+
+  const handleStartCallProtection = async () => {
+    if (!permissions.audioRecording || !permissions.phoneState) {
+      Alert.alert('Required permissions missing', 'Grant Microphone and Phone State permissions first.');
+      return;
+    }
+
+    const ok = await startCallProtection();
+
+    let running = false;
+    for (let i = 0; i < 8; i += 1) {
+      // Service startup on some OEM builds is asynchronous; poll briefly before declaring failure.
+      // eslint-disable-next-line no-await-in-loop
+      running = await isCallProtectionRunning();
+      if (running) break;
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+
+    setCallProtectionRunning(running);
+
+    if (ok && running) {
+      Alert.alert('Call protection active', 'Live call monitoring is ON. AI voice-risk analysis is active during calls.');
+    } else {
+      Alert.alert('Could not start', 'Start failed. Keep app in foreground and try again after granting permissions.');
+    }
+  };
+
+  const handleStopCallProtection = async () => {
+    await stopCallProtection();
+    const running = await isCallProtectionRunning();
+    setCallProtectionRunning(running);
+    Alert.alert('Call protection stopped', 'Live call monitoring is OFF.');
+  };
 
   const statusChip = (granted: boolean) => (
     <View style={[styles.statusChip, granted ? styles.grantedChip : styles.missingChip]}>
@@ -166,6 +208,10 @@ const SettingsScreen = () => {
             {statusChip(permissions.audioRecording)}
           </View>
           <View style={styles.permissionRow}>
+            <Text style={styles.permissionLabel}>Phone State</Text>
+            {statusChip(permissions.phoneState)}
+          </View>
+          <View style={styles.permissionRow}>
             <Text style={styles.permissionLabel}>Call Screening</Text>
             {statusChip(permissions.callScreening)}
           </View>
@@ -210,6 +256,25 @@ const SettingsScreen = () => {
           style={styles.actionButtonSecondary}
           onPress={openPermissionSettings}>
           <Text style={styles.actionTextSecondary}>Open App Permission Settings</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.sectionTitle}>CALL PROTECTION</Text>
+        <View style={styles.permissionCardBox}>
+          <View style={styles.permissionRow}>
+            <Text style={styles.permissionLabel}>Live Call Monitor</Text>
+            {statusChip(callProtectionRunning)}
+          </View>
+          <Text style={styles.permissionHint}>
+            Turn this on while app is open. Then incoming/ongoing calls can be analyzed with live AI voice-risk checks.
+          </Text>
+        </View>
+
+        <TouchableOpacity style={styles.actionButton} onPress={handleStartCallProtection}>
+          <Text style={styles.actionText}>Start Call Protection</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionButtonSecondary} onPress={handleStopCallProtection}>
+          <Text style={styles.actionTextSecondary}>Stop Call Protection</Text>
         </TouchableOpacity>
 
         <Text style={styles.sectionTitle}>NOTIFICATIONS</Text>
