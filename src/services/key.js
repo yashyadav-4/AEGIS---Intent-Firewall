@@ -1,11 +1,10 @@
 // apiKeys.js
 export const API_KEYS = [
-"AIzaSyAI8ABnTrVonUlYU7I4sMCyLKBq7H1k7JM",
-"AIzaSyDp3NpPYvxCmqXMvl1wndC8d3lHWx-7oc4",
-"AIzaSyBhl7UfTfEo0A772WceX42Zf5BK6HbsNl0",
-"AIzaSyDrXVsY0DzjqGHpBBaoeJuYLb8WrXVPtrM",
-"AIzaSyAdrV-XJMrxcwToNmvz6SvLdEZaYzF3-Yk",
-"AIzaSyDT78vqJeIMYn8x803nqBEFfNDZaIhhZd0",
+"AIzaSyA1Cyuju73cS8MpHOhTteM7r5Ktv9PpZCM",
+"AIzaSyDHSkm5l8pwRq07CREi7uyzjL6QQ9Ez9SE",
+"AIzaSyAcSKL00CN65785n0JO4blGnvCUcAOncS0",
+"AIzaSyAWKoqwghI_4wcOn691otay49J6v7bmVL4",
+"AIzaSyBym0_gAEM4oMEbEUYYnKe8EenvPYmkS3Y"
 ];
 
 // Use like:

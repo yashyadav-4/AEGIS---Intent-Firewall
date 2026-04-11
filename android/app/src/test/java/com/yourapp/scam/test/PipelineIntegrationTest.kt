@@ -140,7 +140,7 @@ class PipelineIntegrationTest {
     }
 
     @Test
-    fun safe_tier1_skips_tier3_and_notification() = runTest {
+    fun safe_tier1_always_calls_tier3_without_processing_notification() = runTest {
         every { tier1Engine.analyze(any(), any()) } returns Tier1Result(
             score = 10,
             tier = ScoreTier.SAFE,
@@ -150,9 +150,11 @@ class PipelineIntegrationTest {
             requiresTier3 = false,
             showProcessingNotif = false,
         )
+        coEvery { tier3Client.analyze(any(), any(), any()) } returns
+            Tier3GeminiResult("SAFE", "HIGH", "SAFE", "", 10, "normal")
 
         pipeline.process("Kal milte hain.", "com.whatsapp", emptyList())
-        coVerify(exactly = 0) { tier3Client.analyze(any(), any(), any()) }
+        coVerify(exactly = 1) { tier3Client.analyze(any(), any(), any()) }
         verify(exactly = 0) { ProcessingNotifManager.showProcessing(any(), any()) }
     }
 

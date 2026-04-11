@@ -20,6 +20,8 @@ class NotificationService : NotificationListenerService() {
         add("com.whatsapp")
         add("com.whatsapp.w4b")
         add("org.telegram.messenger")
+        add("com.google.android.gm")
+        add("com.microsoft.office.outlook")
         add("com.android.mms")
         add("com.google.android.apps.messaging")
         add("com.samsung.android.messaging")
@@ -98,6 +100,11 @@ class NotificationService : NotificationListenerService() {
             }
 
             val appName = getAppName(packageName)
+
+            Log.d(
+                "IntentFirewall",
+                "SOURCE=NOTIFICATION package=$packageName title=${title.take(80)} text=${extractedText.take(140)}"
+            )
 
             pipeline.processMessage(
                 appName = appName,
@@ -266,6 +273,8 @@ class NotificationService : NotificationListenerService() {
         return when (packageName) {
             "com.whatsapp", "com.whatsapp.w4b" -> "WhatsApp"
             "org.telegram.messenger" -> "Telegram"
+            "com.google.android.gm" -> "Gmail"
+            "com.microsoft.office.outlook" -> "Outlook"
             "com.android.mms", "com.google.android.apps.messaging", "com.samsung.android.messaging", "com.truecaller" -> "SMS"
             "com.android.shell" -> "System"
             else -> "System"

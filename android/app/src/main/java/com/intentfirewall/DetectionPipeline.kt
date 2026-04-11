@@ -51,6 +51,12 @@ class DetectionPipeline(private val context: Context) {
             )
         }
 
+        val sourceLabel = when (captureMethod.lowercase()) {
+            "accessibility" -> "ACCESSIBILITY"
+            "notification" -> "NOTIFICATION"
+            else -> captureMethod.uppercase()
+        }
+
         val flagged = result.decision == Decision.ALERT
         val category = result.category ?: if (result.decision == Decision.SAFE) "SAFE" else "UNCERTAIN"
 
@@ -102,6 +108,13 @@ class DetectionPipeline(private val context: Context) {
         )
 
         DecisionTraceLogger.log(result, messageForOutput, packageName)
-        Log.d(tag, "processMessage result=${result.decision} tier=${result.tier} category=$category")
+        Log.i(
+            tag,
+            "[$sourceLabel] app=$packageName decision=${result.decision} tier=${result.tier} category=$category text=\"${messageForOutput.take(140)}\""
+        )
+        Log.d(
+            "IntentFirewall",
+            "SOURCE=$sourceLabel TIER=${result.tier} TIER_USED=${if (result.usedTier3) "tier3" else "tier1"} app=$packageName decision=${result.decision} category=$category text=${messageForOutput.take(140)}"
+        )
     }
 }

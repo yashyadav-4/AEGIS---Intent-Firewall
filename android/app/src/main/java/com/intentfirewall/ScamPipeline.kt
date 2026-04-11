@@ -119,14 +119,25 @@ class ScamPipeline(
                 result
             }
             ScoreTier.SAFE -> {
-                val result = PipelineResult(
-                    decision = Decision.SAFE,
-                    tier = 1,
-                    category = null,
-                    confidenceScore = t1.score,
-                    evidence = emptyList(),
-                    usedTier3 = false,
-                )
+                val t3 = try {
+                    tier3GeminiClient.analyze(text, context, t1)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Tier3 failed for SAFE fallback: ${e.message}")
+                    null
+                }
+
+                val result = if (t3 == null) {
+                    PipelineResult(
+                        decision = Decision.UNCERTAIN,
+                        tier = 1,
+                        category = null,
+                        confidenceScore = t1.score,
+                        evidence = emptyList(),
+                        usedTier3 = true,
+                    )
+                } else {
+                    mapTier3ToResult(t3, usedTier3 = true)
+                }
                 DecisionTraceLogger.log(result, text, packageName)
                 result
             }
@@ -149,10 +160,15 @@ class ScamPipeline(
     }
 
     private fun mapTier3ToResult(t3: Tier3GeminiResult, usedTier3: Boolean): PipelineResult {
+        val cls = t3.classification.uppercase()
+        val cat = t3.category.uppercase()
+        val maliciousByClass = cls in setOf("SCAM", "MALICIOUS", "FAKE_IDENTITY", "HARASSMENT", "EXTORTION", "CRUELTY")
+        val maliciousByCategory = cat in setOf("SCAM", "FAKE_IDENTITY", "HARASSMENT", "EXTORTION", "CRUELTY") || cat.endsWith("_SCAM")
+
         val decision = when {
-            t3.classification == "SCAM" && t3.confidence in listOf("HIGH", "MEDIUM") -> Decision.ALERT
-            t3.classification == "SCAM" && t3.confidence == "LOW" -> Decision.UNCERTAIN
-            t3.classification == "UNCERTAIN" -> Decision.UNCERTAIN
+            (maliciousByClass || maliciousByCategory) && t3.confidence in listOf("HIGH", "MEDIUM") -> Decision.ALERT
+            (maliciousByClass || maliciousByCategory) && t3.confidence == "LOW" -> Decision.UNCERTAIN
+            cls == "UNCERTAIN" -> Decision.UNCERTAIN
             else -> Decision.SAFE
         }
         return PipelineResult(

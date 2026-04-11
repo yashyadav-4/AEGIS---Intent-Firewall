@@ -101,7 +101,7 @@ class Tier3GeminiClientTest {
     fun prompt_includes_json_schema_with_confidence_values() {
         val prompt = invokeBuildPrompt("test", emptyList(), tier1)
         assertTrue(prompt.contains("HIGH | MEDIUM | LOW"))
-        assertTrue(prompt.contains("SCAM | SAFE | UNCERTAIN"))
+        assertTrue(prompt.contains("SCAM | MALICIOUS | SAFE | UNCERTAIN"))
     }
 
     private fun invokeParse(body: String): com.intentfirewall.Tier3GeminiResult {

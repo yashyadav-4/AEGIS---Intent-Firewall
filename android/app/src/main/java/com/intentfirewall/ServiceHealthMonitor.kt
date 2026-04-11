@@ -36,7 +36,7 @@ object ServiceHealthMonitor {
 
     private const val TAG = "SCAM_ServiceHealthMonitor"
     private const val INTERVAL_MS = 30_000L
-    private const val STALE_GAP_MS = 120_000L
+    private const val STALE_GAP_MS = 20 * 60_000L
     private const val CHANNEL_ID = "scam_health_alerts"
     private const val NOTIF_ID = 770021
 
@@ -165,16 +165,21 @@ object ServiceHealthMonitor {
 
     private fun runHealthCheck(context: Context) {
         val accessibilityEnabled = isAccessibilityServiceEnabled(context)
+        val notificationEnabled = isNotificationListenerEnabled(context)
         val foregroundRunning = isServiceRunning(context, ScamForegroundService::class.java)
         val lastEvent = context
             .getSharedPreferences(ScamForegroundService.PREF_HEALTH, Context.MODE_PRIVATE)
             .getLong(ScamForegroundService.KEY_LAST_EVENT_AT, 0L)
 
         val now = System.currentTimeMillis()
-        val stale = isActiveHours() && lastEvent > 0L && now - lastEvent > STALE_GAP_MS
+        val anyCapturePermission = accessibilityEnabled || notificationEnabled
+        val anyCaptureConnected =
+            (accessibilityEnabled && accessibilityConnected) ||
+                (notificationEnabled && notificationConnected)
+        val stale = isActiveHours() && anyCaptureConnected && lastEvent > 0L && now - lastEvent > STALE_GAP_MS
 
         val next = when {
-            !accessibilityEnabled -> HealthState.PERMISSION_REVOKED
+            !anyCapturePermission -> HealthState.PERMISSION_REVOKED
             !foregroundRunning -> HealthState.DEAD
             stale -> HealthState.STALE
             else -> HealthState.HEALTHY
@@ -182,14 +187,22 @@ object ServiceHealthMonitor {
 
         state = next
 
-        if (next == HealthState.DEAD || next == HealthState.STALE || next == HealthState.PERMISSION_REVOKED) {
+        if (next == HealthState.DEAD || next == HealthState.PERMISSION_REVOKED) {
             if (OemWhitelistGuide.shouldPrompt(context)) {
                 showPausedNotification(context)
             }
             Log.w(
                 TAG,
                 "state=${next.name} model=${Build.MODEL} sdk=${Build.VERSION.SDK_INT} " +
-                    "accessibilityEnabled=$accessibilityEnabled foregroundRunning=$foregroundRunning lastGap=${now - lastEvent}",
+                    "accessibilityEnabled=$accessibilityEnabled notificationEnabled=$notificationEnabled " +
+                    "foregroundRunning=$foregroundRunning lastGap=${now - lastEvent}",
+            )
+        } else if (next == HealthState.STALE) {
+            Log.w(
+                TAG,
+                "state=${next.name} model=${Build.MODEL} sdk=${Build.VERSION.SDK_INT} " +
+                    "accessibilityEnabled=$accessibilityEnabled notificationEnabled=$notificationEnabled " +
+                    "foregroundRunning=$foregroundRunning lastGap=${now - lastEvent}",
             )
         } else {
             clearPausedNotification(context)

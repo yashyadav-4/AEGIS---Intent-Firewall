@@ -108,7 +108,7 @@ def geminiApiKeyRaw = geminiKeysFromServiceFile
 
 def geminiApiKeyEscaped = geminiApiKeyRaw.replace('\\', '\\\\').replace('"', '\\"')
 def geminiApiKeysEscaped = geminiApiKeysRaw.replace('\\', '\\\\').replace('"', '\\"')
-def geminiModelRaw = localProps.getProperty('GEMINI_MODEL', System.getenv('GEMINI_MODEL') ?: 'gemini-3.1-flash-lite-preview')
+def geminiModelRaw = localProps.getProperty('GEMINI_MODEL', System.getenv('GEMINI_MODEL') ?: 'gemma-4-31b')
 def geminiModelEscaped = geminiModelRaw.replace('\\', '\\\\').replace('"', '\\"')
 def geminiVoiceModelRaw = localProps.getProperty('GEMINI_VOICE_MODEL', System.getenv('GEMINI_VOICE_MODEL') ?: 'gemini-2.0-flash')
 def geminiVoiceModelEscaped = geminiVoiceModelRaw.replace('\\', '\\\\').replace('"', '\\"')

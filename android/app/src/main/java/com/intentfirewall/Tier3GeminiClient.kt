@@ -29,26 +29,63 @@ object Tier3GeminiClient : Tier3GeminiClientPort {
 
     /** Analyze text using Gemini with one retry and strict JSON parsing. */
     override suspend fun analyze(text: String, context: List<String>, tier1: Tier1Result): Tier3GeminiResult = withContext(Dispatchers.IO) {
-        val apiKey = BuildConfig.GEMINI_API_KEY.trim().ifBlank {
-            BuildConfig.GEMINI_API_KEYS.split(',').map { it.trim() }.firstOrNull { it.isNotBlank() } ?: ""
-        }
-        require(apiKey.isNotBlank()) { "Gemini API key is missing" }
+        val apiKeys = buildApiKeyCandidates(BuildConfig.GEMINI_API_KEY, BuildConfig.GEMINI_API_KEYS)
+        require(apiKeys.isNotEmpty()) { "Gemini API key is missing" }
 
-        val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey"
         val prompt = buildPrompt(text, context, tier1)
+        val modelCandidates = buildModelCandidates(BuildConfig.GEMINI_MODEL)
 
         var lastError: Exception? = null
-        repeat(2) { attempt ->
-            try {
-                return@withContext call(endpoint, prompt)
-            } catch (e: Exception) {
-                lastError = e
-                Log.w(TAG, "analyze attempt=${attempt + 1} failed: ${e.message}")
-                if (attempt == 0) delay(RETRY_DELAY_MS)
+        apiKeys.forEachIndexed { keyIndex, apiKey ->
+            modelCandidates.forEach { model ->
+                val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
+                repeat(2) { attempt ->
+                    try {
+                        val result = call(endpoint, prompt)
+                        Log.i(TAG, "analyze success keyIndex=${keyIndex + 1} model=$model")
+                        return@withContext result
+                    } catch (e: Exception) {
+                        lastError = e
+                        Log.w(
+                            TAG,
+                            "analyze keyIndex=${keyIndex + 1} model=$model attempt=${attempt + 1} failed: ${e.message}",
+                        )
+                        if (attempt == 0) delay(RETRY_DELAY_MS)
+                    }
+                }
             }
         }
 
         throw IllegalStateException("Tier3 failed after retry", lastError)
+    }
+
+    private fun buildApiKeyCandidates(primary: String, csvKeys: String): List<String> {
+        val keys = linkedSetOf<String>()
+        val normalizedPrimary = primary.trim()
+        if (normalizedPrimary.isNotBlank()) keys.add(normalizedPrimary)
+        csvKeys.split(',').map { it.trim() }.filter { it.isNotBlank() }.forEach { keys.add(it) }
+        return keys.toList()
+    }
+
+    private fun buildModelCandidates(configuredModel: String): List<String> {
+        fun normalize(model: String): String {
+            val trimmed = model.trim()
+            return if (trimmed.startsWith("models/")) trimmed.removePrefix("models/") else trimmed
+        }
+
+        val configured = normalize(configuredModel).ifBlank { "gemma-4-31b" }
+        val candidates = linkedSetOf(
+            configured,
+            "gemma-4-31b",
+            "gemini-3.1-flash-lite",
+            "gemini-3.1-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash-latest",
+            "gemini-1.5-flash",
+        )
+        return candidates.toList()
     }
 
     private fun call(endpoint: String, prompt: String): Tier3GeminiResult {
@@ -140,7 +177,7 @@ object Tier3GeminiClient : Tier3GeminiClientPort {
         val matched = tier1.matchedKeywords.joinToString(", ").ifBlank { "none" }
 
         return """
-You are a scam detection engine for India. Analyze the message below.
+You are an intent and abuse detection engine for India. Analyze the message below.
 Return ONLY a JSON object - no explanation, no markdown, no preamble.
 
 Context (last 3 messages, may be empty):
@@ -158,6 +195,9 @@ OTP_SCAM, KYC_SCAM, LOTTERY_SCAM, JOB_SCAM, LOAN_SCAM,
 INVESTMENT_SCAM, IMPERSONATION_SCAM, ROMANCE_SCAM,
 TECH_SUPPORT_SCAM, COURIER_SCAM, UTILITY_SCAM
 
+Also detect broader malicious intent categories:
+FAKE_IDENTITY, HARASSMENT, EXTORTION, CRUELTY
+
 Rules:
 1. Classify CURRENT MESSAGE only. Context is reference only.
 2. Never assign OTP_SCAM without OTP/code evidence in current message.
@@ -165,12 +205,13 @@ Rules:
 4. Consider Hinglish, transliteration, slang, bad spelling.
 5. Consider Tier 1 score as a prior - if Tier 1 is 70+ and you are uncertain, lean toward SCAM not SAFE.
 6. Short messages with unclear intent = UNCERTAIN.
+7. If message has intent to deceive identity, extort money, threaten harm, emotionally abuse, or coerce: classify as MALICIOUS with the best fitting category.
 
 Return exactly this JSON:
 {
-  "classification": "SCAM | SAFE | UNCERTAIN",
+    "classification": "SCAM | MALICIOUS | SAFE | UNCERTAIN | FAKE_IDENTITY | HARASSMENT | EXTORTION | CRUELTY",
   "confidence": "HIGH | MEDIUM | LOW",
-  "category": "OTP_SCAM | KYC_SCAM | LOTTERY_SCAM | JOB_SCAM | LOAN_SCAM | INVESTMENT_SCAM | IMPERSONATION_SCAM | ROMANCE_SCAM | TECH_SUPPORT_SCAM | COURIER_SCAM | UTILITY_SCAM | SAFE | UNCERTAIN",
+    "category": "OTP_SCAM | KYC_SCAM | LOTTERY_SCAM | JOB_SCAM | LOAN_SCAM | INVESTMENT_SCAM | IMPERSONATION_SCAM | ROMANCE_SCAM | TECH_SUPPORT_SCAM | COURIER_SCAM | UTILITY_SCAM | FAKE_IDENTITY | HARASSMENT | EXTORTION | CRUELTY | SAFE | UNCERTAIN",
   "evidence": "exact phrase from current message that triggered this",
   "confidence_score": 0-100,
   "reasoning": "one sentence max"
