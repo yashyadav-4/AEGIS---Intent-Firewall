@@ -83,12 +83,33 @@ class NotificationService : NotificationListenerService() {
             ServiceHealthMonitor.onNotificationEventCaptured(applicationContext)
 
             if (extractedText.isBlank() || looksRedacted) {
-                scheduleHiddenOrNoPreviewForward(
-                    notificationKey = notificationKey,
+                val appName = getAppName(packageName)
+                val fallbackCategory = if (looksRedacted) "HIDDEN_BY_OS" else "NO_PREVIEW"
+                val dedupeKey = "meta:${title.ifBlank { packageName }}:$fallbackCategory"
+
+                if (!MessageConsistencyCoordinator.shouldProcessNotification(packageName, dedupeKey)) {
+                    return
+                }
+
+                NotificationEventEmitter.sendNotification(
+                    context = applicationContext,
+                    appName = appName,
+                    title = title.ifBlank { appName },
+                    text = "",
                     packageName = packageName,
-                    title = title,
-                    isRedacted = looksRedacted,
+                    flagged = false,
+                    matchedCategory = fallbackCategory,
+                    conversationContext = "",
+                    confidence = 0.0f,
+                    sender = title.ifBlank { appName },
+                    appSource = appName,
+                    captureMethod = "notification",
                     eventTimestamp = eventTimestamp,
+                )
+
+                Log.d(
+                    "IntentFirewall|NotifService",
+                    "Buffered metadata-only notification package=$packageName category=$fallbackCategory"
                 )
                 return
             }
@@ -103,7 +124,7 @@ class NotificationService : NotificationListenerService() {
 
             Log.d(
                 "IntentFirewall",
-                "SOURCE=NOTIFICATION package=$packageName title=${title.take(80)} text=${extractedText.take(140)}"
+                "SOURCE=NOTIFICATION package=$packageName title=$title text=$extractedText"
             )
 
             pipeline.processMessage(

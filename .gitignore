@@ -108,4 +108,14 @@ yarn-error.log
 .vscode/
 
 # Local secrets
+.env
+.env.*
+!.env.example
 src/services/key.js
+
+# Secret key variants
+src/services/apiKeys.js
+src/services/apikeys.js
+
+
+.env

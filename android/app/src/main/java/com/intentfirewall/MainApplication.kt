@@ -22,7 +22,6 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
-    ServiceHealthMonitor.ensureStarted(this)
     loadReactNative(this)
   }
 }

@@ -72,7 +72,8 @@ object ServiceHealthMonitor {
             if (started) return
             appContext = context.applicationContext
             started = true
-            handler.post(checker)
+            // Delay the first check so cold-start remains responsive.
+            handler.postDelayed(checker, INTERVAL_MS)
             Log.i(TAG, "Health monitor started")
         }
     }
@@ -218,7 +219,7 @@ object ServiceHealthMonitor {
         return try {
             val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return false
             @Suppress("DEPRECATION")
-            manager.getRunningServices(Int.MAX_VALUE).any { it.service.className == clazz.name }
+            manager.getRunningServices(256).any { it.service.className == clazz.name }
         } catch (e: Exception) {
             Log.e(TAG, "isServiceRunning failed", e)
             false

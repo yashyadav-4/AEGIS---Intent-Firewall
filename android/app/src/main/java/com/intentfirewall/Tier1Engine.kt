@@ -17,10 +17,64 @@ data class Tier1Result(
 /** Deterministic on-device tier that scores scam likelihood in <5ms for short messages. */
 object Tier1Engine : Tier1EnginePort {
     private const val TAG = "SCAM_Tier1Engine"
+    private val amountRegex = Regex("""\b(?:rs\.?|inr|₹)\s?\d{2,3}(?:,\d{3})+\b|\b\d{2,3}(?:,\d{3})+\s?(?:rupees|rs)\b""")
+    private val coercionSignals = setOf(
+        "hit and run", "accident", "victim", "medical expenses", "medical expense",
+        "fir", "arrest", "jail", "warrant", "legal action", "settle this", "settle",
+        "pay now", "transfer now", "or else", "otherwise"
+    )
+    private val authorityClaimSignals = setOf(
+        "inspector", "police station", "police", "cyber crime", "officer", "department",
+        "court", "crime branch", "investigation"
+    )
+    private val refundPhishSignals = setOf(
+        "itr refund", "income tax", "refund", "approved", "credited", "credit", "pan details",
+        "bank details", "update your", "update pan", "update bank", "could not be credited"
+    )
 
     /** Analyze message with optional recent text context and return deterministic score and routing hints. */
     override fun analyze(text: String, context: List<String>): Tier1Result {
         val normalized = text.lowercase().trim().replace("\\s+".toRegex(), " ")
+        val contextText = context.joinToString(" ").lowercase().replace("\\s+".toRegex(), " ")
+        val combined = ("$normalized $contextText").trim()
+
+        val authoritySignal = hasAny(combined, ScamKeywordDatabase.authoritySignals) || hasAny(combined, authorityClaimSignals)
+        val moneySignal = hasAny(combined, ScamKeywordDatabase.moneySignals) || amountRegex.containsMatchIn(combined)
+        val coercionSignal = hasAny(combined, ScamKeywordDatabase.urgencySignals) || hasAny(combined, coercionSignals)
+
+        if (authoritySignal && moneySignal && coercionSignal) {
+            val evidence = listOf("authority_claim", "money_demand", "coercion_or_harm")
+            Log.d(TAG, "analyze hardRule=COERCIVE_IMPERSONATION score=96 tier=HIGH category=IMPERSONATION_SCAM")
+            return Tier1Result(
+                score = 96,
+                tier = ScoreTier.HIGH,
+                category = ScamCategory("IMPERSONATION_SCAM", "Impersonation Scam"),
+                matchedKeywords = evidence,
+                evidencePhrases = evidence,
+                requiresTier3 = false,
+                showProcessingNotif = false,
+            )
+        }
+
+        val hasRefundSignal = hasAny(combined, refundPhishSignals)
+        val hasUpdateSignal = combined.contains("update") &&
+            (combined.contains("bank") || combined.contains("pan") || combined.contains("details"))
+        val hasAuthorityOrMoney = authoritySignal || moneySignal || combined.contains("rs") || combined.contains("inr")
+
+        if (hasRefundSignal && hasUpdateSignal && hasAuthorityOrMoney) {
+            val evidence = listOf("refund_notice", "details_update_request", "authority_or_money_context")
+            Log.d(TAG, "analyze hardRule=REFUND_UPDATE_PHISH score=94 tier=HIGH category=KYC_SCAM")
+            return Tier1Result(
+                score = 94,
+                tier = ScoreTier.HIGH,
+                category = ScamCategory("KYC_SCAM", "KYC Scam"),
+                matchedKeywords = evidence,
+                evidencePhrases = evidence,
+                requiresTier3 = false,
+                showProcessingNotif = false,
+            )
+        }
+
         var bestScore = 0
         var bestCategory: ScamCategory? = null
         var bestMatches: List<String> = emptyList()

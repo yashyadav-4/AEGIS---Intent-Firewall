@@ -81,36 +81,50 @@ if (localPropsFile.exists()) {
     }
 }
 
-def serviceKeyFile = rootProject.file('../src/services/key.js')
-def geminiKeysFromServiceFile = []
-if (serviceKeyFile.exists()) {
-    def keyJs = serviceKeyFile.getText('UTF-8')
-    def apiKeysBlock = (keyJs =~ /(?s)API_KEYS\s*=\s*\[(.*?)\]/)
-    if (apiKeysBlock.find()) {
-        def inner = apiKeysBlock.group(1)
-        def keyMatcher = (inner =~ /["']([^"']+)["']/)
-        while (keyMatcher.find()) {
-            def candidate = keyMatcher.group(1)?.trim()
-            if (candidate) {
-                geminiKeysFromServiceFile << candidate
-            }
+def dotEnv = new Properties()
+def dotEnvFile = rootProject.file('../.env')
+if (dotEnvFile.exists()) {
+    dotEnvFile.eachLine('UTF-8') { line ->
+        def trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) return
+        def splitIndex = trimmed.indexOf('=')
+        if (splitIndex <= 0) return
+
+        def key = trimmed.substring(0, splitIndex).trim()
+        def value = trimmed.substring(splitIndex + 1).trim()
+        if ((value.startsWith('"') && value.endsWith('"') && value.length() >= 2) ||
+            (value.startsWith("'") && value.endsWith("'") && value.length() >= 2)) {
+            value = value.substring(1, value.length() - 1)
         }
+        dotEnv.setProperty(key, value)
     }
 }
 
-def geminiApiKeysRaw = geminiKeysFromServiceFile
-    ? geminiKeysFromServiceFile.join(',')
-    : localProps.getProperty('GEMINI_API_KEYS', System.getenv('GEMINI_API_KEYS') ?: localProps.getProperty('GEMINI_API_KEY', System.getenv('GEMINI_API_KEY') ?: ''))
+def readSecret = { String key ->
+    return dotEnv.getProperty(key, localProps.getProperty(key, System.getenv(key) ?: ''))
+}
 
-def geminiApiKeyRaw = geminiKeysFromServiceFile
-    ? geminiKeysFromServiceFile[0]
-    : localProps.getProperty('GEMINI_API_KEY', System.getenv('GEMINI_API_KEY') ?: '')
+def geminiKeysFromEnv = (1..5)
+    .collect { idx -> readSecret("AP${idx}")?.trim() }
+    .findAll { it }
+
+def geminiApiKeysRaw = geminiKeysFromEnv
+    ? geminiKeysFromEnv.join(',')
+    : readSecret('GEMINI_API_KEYS')
+
+if (!geminiApiKeysRaw) {
+    geminiApiKeysRaw = readSecret('GEMINI_API_KEY')
+}
+
+def geminiApiKeyRaw = geminiKeysFromEnv
+    ? geminiKeysFromEnv[0]
+    : readSecret('GEMINI_API_KEY')
 
 def geminiApiKeyEscaped = geminiApiKeyRaw.replace('\\', '\\\\').replace('"', '\\"')
 def geminiApiKeysEscaped = geminiApiKeysRaw.replace('\\', '\\\\').replace('"', '\\"')
-def geminiModelRaw = localProps.getProperty('GEMINI_MODEL', System.getenv('GEMINI_MODEL') ?: 'gemma-4-31b')
+def geminiModelRaw = readSecret('GEMINI_MODEL') ?: 'gemma-4-31b'
 def geminiModelEscaped = geminiModelRaw.replace('\\', '\\\\').replace('"', '\\"')
-def geminiVoiceModelRaw = localProps.getProperty('GEMINI_VOICE_MODEL', System.getenv('GEMINI_VOICE_MODEL') ?: 'gemini-2.0-flash')
+def geminiVoiceModelRaw = readSecret('GEMINI_VOICE_MODEL') ?: 'gemini-2.0-flash'
 def geminiVoiceModelEscaped = geminiVoiceModelRaw.replace('\\', '\\\\').replace('"', '\\"')
 
 android {

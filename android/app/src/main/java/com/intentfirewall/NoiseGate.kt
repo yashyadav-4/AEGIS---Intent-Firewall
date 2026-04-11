@@ -16,7 +16,9 @@ object NoiseGate {
         "calling", "on a call", "open chat", "read more", "missed call",
         "declined", "call ended", "ringing", "connected", "on hold",
         "recording", "typing...", "online", "last seen", "delivered", "seen",
-        "voice message", "photo", "video", "sticker", "document", "contact"
+        "voice message", "photo", "video", "sticker", "document", "contact",
+        "calls", "chats", "updates", "status", "new chat", "camera", "search",
+        "amazon india picture", "image", "picture"
     )
 
     /** Returns true when text should be dropped before tiered analysis. */
@@ -36,6 +38,7 @@ object NoiseGate {
         if (Regex("^\\d{1,2}:\\d{2}\\s?(am|pm)?$", RegexOption.IGNORE_CASE).matches(normalized)) return true
         if (Regex("^\\d+$").matches(normalized)) return true
         if (Regex("^https?://\\S+$", RegexOption.IGNORE_CASE).matches(normalized)) return true
+        if (Regex("^(calls|chats|updates|status)$", RegexOption.IGNORE_CASE).matches(normalized)) return true
 
         return false
     }

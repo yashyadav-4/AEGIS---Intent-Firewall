@@ -57,6 +57,7 @@ class DetectionPipeline(private val context: Context) {
             else -> captureMethod.uppercase()
         }
 
+        // Only ALERT should trigger a user-facing scam notification.
         val flagged = result.decision == Decision.ALERT
         val category = result.category ?: if (result.decision == Decision.SAFE) "SAFE" else "UNCERTAIN"
 
@@ -110,11 +111,11 @@ class DetectionPipeline(private val context: Context) {
         DecisionTraceLogger.log(result, messageForOutput, packageName)
         Log.i(
             tag,
-            "[$sourceLabel] app=$packageName decision=${result.decision} tier=${result.tier} category=$category text=\"${messageForOutput.take(140)}\""
+            "[$sourceLabel] app=$packageName decision=${result.decision} tier=${result.tier} category=$category text=\"$messageForOutput\""
         )
         Log.d(
             "IntentFirewall",
-            "SOURCE=$sourceLabel TIER=${result.tier} TIER_USED=${if (result.usedTier3) "tier3" else "tier1"} app=$packageName decision=${result.decision} category=$category text=${messageForOutput.take(140)}"
+            "SOURCE=$sourceLabel TIER=${result.tier} TIER_USED=${if (result.usedTier3) "tier3" else "tier1"} app=$packageName decision=${result.decision} category=$category text=$messageForOutput"
         )
     }
 }

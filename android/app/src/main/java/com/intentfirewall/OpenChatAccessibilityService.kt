@@ -98,22 +98,26 @@ class OpenChatAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        ServiceHealthMonitor.ensureStarted(applicationContext)
-        ServiceHealthMonitor.onAccessibilityServiceConnected(applicationContext)
-        val info = serviceInfo ?: AccessibilityServiceInfo()
-        info.eventTypes = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
-            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED or
-            AccessibilityEvent.TYPE_VIEW_SCROLLED
-        info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-        info.packageNames = trackedPackages.toTypedArray()
-        info.notificationTimeout = 120
-        info.flags = info.flags or
-            AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
-            AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
-            AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
-        serviceInfo = info
+        try {
+            ServiceHealthMonitor.ensureStarted(applicationContext)
+            ServiceHealthMonitor.onAccessibilityServiceConnected(applicationContext)
+            val info = serviceInfo ?: AccessibilityServiceInfo()
+            info.eventTypes = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
+                AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED or
+                AccessibilityEvent.TYPE_VIEW_SCROLLED
+            info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+            info.packageNames = trackedPackages.toTypedArray()
+            info.notificationTimeout = 120
+            info.flags = info.flags or
+                AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
+                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+                AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
+            serviceInfo = info
 
-        Log.i("IntentFirewall", "OpenChatAccessibilityService connected")
+            Log.i("IntentFirewall", "OpenChatAccessibilityService connected")
+        } catch (t: Throwable) {
+            Log.e("IntentFirewall", "OpenChatAccessibilityService onServiceConnected failed", t)
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -191,9 +195,14 @@ class OpenChatAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
-        processingExecutor.shutdownNow()
-        ServiceHealthMonitor.onAccessibilityServiceDisconnected(applicationContext)
-        super.onDestroy()
+        try {
+            processingExecutor.shutdownNow()
+            ServiceHealthMonitor.onAccessibilityServiceDisconnected(applicationContext)
+        } catch (t: Throwable) {
+            Log.e("IntentFirewall", "OpenChatAccessibilityService onDestroy failed", t)
+        } finally {
+            super.onDestroy()
+        }
     }
 
     private fun extractText(event: AccessibilityEvent): String {

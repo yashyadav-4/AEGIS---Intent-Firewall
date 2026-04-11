@@ -73,6 +73,7 @@
         <service
             android:name=".OpenChatAccessibilityService"
             android:exported="true"
+            android:label="@string/accessibility_open_chat_label"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
@@ -86,6 +87,7 @@
         <service
             android:name=".ScamAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:label="@string/accessibility_scam_guard_label"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />

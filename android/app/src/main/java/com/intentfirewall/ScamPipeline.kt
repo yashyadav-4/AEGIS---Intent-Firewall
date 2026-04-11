@@ -45,7 +45,15 @@ class ScamPipeline(
         context: List<String> = emptyList(),
     ): PipelineResult {
         if (NoiseGate.shouldDrop(text)) {
-            val result = PipelineResult(Decision.SAFE, tier = 1, category = null, confidenceScore = 0, evidence = emptyList(), usedTier3 = false)
+            val result = PipelineResult(
+                decision = Decision.SAFE,
+                tier = 1,
+                category = "NOISE",
+                confidenceScore = 0,
+                evidence = listOf("noise_gate"),
+                usedTier3 = false,
+            )
+            Log.d("IntentFirewall", "NOISE_GATE_DROP package=$packageName text=$text")
             DecisionTraceLogger.log(result, text, packageName)
             return result
         }
@@ -62,6 +70,7 @@ class ScamPipeline(
                     evidence = t1.evidencePhrases,
                     usedTier3 = false,
                 )
+
                 DecisionTraceLogger.log(result, text, packageName)
                 result
             }
@@ -122,13 +131,13 @@ class ScamPipeline(
                 val t3 = try {
                     tier3GeminiClient.analyze(text, context, t1)
                 } catch (e: Exception) {
-                    Log.w(TAG, "Tier3 failed for SAFE fallback: ${e.message}")
+                    Log.w(TAG, "Tier3 failed for SAFE: ${e.message}")
                     null
                 }
 
                 val result = if (t3 == null) {
                     PipelineResult(
-                        decision = Decision.UNCERTAIN,
+                        decision = Decision.SAFE,
                         tier = 1,
                         category = null,
                         confidenceScore = t1.score,

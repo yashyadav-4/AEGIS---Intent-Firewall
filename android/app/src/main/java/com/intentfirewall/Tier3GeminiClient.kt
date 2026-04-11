@@ -4,12 +4,15 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.atomic.AtomicInteger
 
 data class Tier3GeminiResult(
     val classification: String,
@@ -23,40 +26,63 @@ data class Tier3GeminiResult(
 /** Gemini Tier 3 client with strict prompt, timeout, retry, and JSON parsing. */
 object Tier3GeminiClient : Tier3GeminiClientPort {
     private const val TAG = "SCAM_Tier3GeminiClient"
-    private const val CONNECT_TIMEOUT_MS = 10_000
-    private const val READ_TIMEOUT_MS = 10_000
+    private const val CONNECT_TIMEOUT_MS = 15_000
+    private const val READ_TIMEOUT_MS = 30_000
     private const val RETRY_DELAY_MS = 600L
+    private val keyRoundRobinCursor = AtomicInteger(0)
+    private val requestMutex = Mutex()
 
     /** Analyze text using Gemini with one retry and strict JSON parsing. */
     override suspend fun analyze(text: String, context: List<String>, tier1: Tier1Result): Tier3GeminiResult = withContext(Dispatchers.IO) {
-        val apiKeys = buildApiKeyCandidates(BuildConfig.GEMINI_API_KEY, BuildConfig.GEMINI_API_KEYS)
-        require(apiKeys.isNotEmpty()) { "Gemini API key is missing" }
+        requestMutex.withLock {
+            val apiKeys = buildApiKeyCandidates(BuildConfig.GEMINI_API_KEY, BuildConfig.GEMINI_API_KEYS)
+            require(apiKeys.isNotEmpty()) { "Gemini API key is missing" }
 
-        val prompt = buildPrompt(text, context, tier1)
-        val modelCandidates = buildModelCandidates(BuildConfig.GEMINI_MODEL)
+            val prompt = buildPrompt(text, context, tier1)
+            val modelCandidates = buildModelCandidates(BuildConfig.GEMINI_MODEL)
+            val keyAttempts = buildRoundRobinKeyAttempts(apiKeys)
+            if (keyAttempts.isNotEmpty()) {
+                Log.i(
+                    TAG,
+                    "roundRobin requestStartKeyIndex=${keyAttempts.first().first} totalKeys=${keyAttempts.size} model=${modelCandidates.firstOrNull().orEmpty()}"
+                )
+            }
 
-        var lastError: Exception? = null
-        apiKeys.forEachIndexed { keyIndex, apiKey ->
-            modelCandidates.forEach { model ->
-                val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
-                repeat(2) { attempt ->
-                    try {
-                        val result = call(endpoint, prompt)
-                        Log.i(TAG, "analyze success keyIndex=${keyIndex + 1} model=$model")
-                        return@withContext result
-                    } catch (e: Exception) {
-                        lastError = e
-                        Log.w(
-                            TAG,
-                            "analyze keyIndex=${keyIndex + 1} model=$model attempt=${attempt + 1} failed: ${e.message}",
-                        )
-                        if (attempt == 0) delay(RETRY_DELAY_MS)
+            var lastError: Exception? = null
+            keyAttempts.forEach { (keyIndex, apiKey) ->
+                modelCandidates.forEach { model ->
+                    val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
+                    repeat(2) { attempt ->
+                        try {
+                            Log.i(
+                                "IntentFirewall",
+                                "TIER3_REQUEST keyIndex=$keyIndex model=$model attempt=${attempt + 1} text=$text"
+                            )
+                            val result = call(endpoint, prompt)
+                            Log.i(TAG, "analyze success keyIndex=$keyIndex model=$model")
+                            Log.i(
+                                "IntentFirewall",
+                                "TIER3_REPLY keyIndex=$keyIndex model=$model class=${result.classification} confidence=${result.confidence} category=${result.category} score=${result.confidenceScore} evidence=${result.evidence} reasoning=${result.reasoning}"
+                            )
+                            return@withContext result
+                        } catch (e: Exception) {
+                            lastError = e
+                            Log.w(
+                                TAG,
+                                "analyze keyIndex=$keyIndex keySuffix=${keySuffix(apiKey)} model=$model attempt=${attempt + 1} failed: ${e.message}",
+                            )
+                            Log.w(
+                                "IntentFirewall",
+                                "TIER3_ERROR keyIndex=$keyIndex model=$model attempt=${attempt + 1} error=${e.message}"
+                            )
+                            if (attempt == 0) delay(RETRY_DELAY_MS)
+                        }
                     }
                 }
             }
-        }
 
-        throw IllegalStateException("Tier3 failed after retry", lastError)
+            throw IllegalStateException("Tier3 failed after retry", lastError)
+        }
     }
 
     private fun buildApiKeyCandidates(primary: String, csvKeys: String): List<String> {
@@ -68,24 +94,21 @@ object Tier3GeminiClient : Tier3GeminiClientPort {
     }
 
     private fun buildModelCandidates(configuredModel: String): List<String> {
-        fun normalize(model: String): String {
-            val trimmed = model.trim()
-            return if (trimmed.startsWith("models/")) trimmed.removePrefix("models/") else trimmed
-        }
+        return listOf("gemma-4-31b-it")
+    }
 
-        val configured = normalize(configuredModel).ifBlank { "gemma-4-31b" }
-        val candidates = linkedSetOf(
-            configured,
-            "gemma-4-31b",
-            "gemini-3.1-flash-lite",
-            "gemini-3.1-flash",
-            "gemini-2.5-flash-lite",
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash-latest",
-            "gemini-1.5-flash",
-        )
-        return candidates.toList()
+    private fun buildRoundRobinKeyAttempts(apiKeys: List<String>): List<Pair<Int, String>> {
+        if (apiKeys.isEmpty()) return emptyList()
+        val start = Math.floorMod(keyRoundRobinCursor.getAndIncrement(), apiKeys.size)
+        return (0 until apiKeys.size).map { offset ->
+            val idx = (start + offset) % apiKeys.size
+            (idx + 1) to apiKeys[idx]
+        }
+    }
+
+    private fun keySuffix(key: String): String {
+        val trimmed = key.trim()
+        return if (trimmed.length <= 6) trimmed else trimmed.takeLast(6)
     }
 
     private fun call(endpoint: String, prompt: String): Tier3GeminiResult {
@@ -106,6 +129,7 @@ object Tier3GeminiClient : Tier3GeminiClientPort {
                 JSONObject().apply {
                     put("temperature", 0.1)
                     put("maxOutputTokens", 300)
+                    put("responseMimeType", "application/json")
                 }
             )
         }
@@ -146,7 +170,11 @@ object Tier3GeminiClient : Tier3GeminiClientPort {
         require(text.isNotBlank()) { "Tier3 empty output" }
 
         val cleaned = text.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-        val obj = JSONObject(cleaned)
+        val obj = extractJsonObject(cleaned)
+        if (obj == null) {
+            Log.w("IntentFirewall", "TIER3_NON_JSON raw=$cleaned")
+            return fallbackFromText(cleaned)
+        }
 
         return Tier3GeminiResult(
             classification = obj.optString("classification", "UNCERTAIN").uppercase(),
@@ -155,6 +183,62 @@ object Tier3GeminiClient : Tier3GeminiClientPort {
             evidence = obj.optString("evidence", ""),
             confidenceScore = obj.optInt("confidence_score", 50).coerceIn(0, 100),
             reasoning = obj.optString("reasoning", ""),
+        )
+    }
+
+    private fun extractJsonObject(text: String): JSONObject? {
+        try {
+            return JSONObject(text)
+        } catch (_: Exception) {
+        }
+
+        val start = text.indexOf('{')
+        val end = text.lastIndexOf('}')
+        if (start >= 0 && end > start) {
+            val candidate = text.substring(start, end + 1)
+            try {
+                return JSONObject(candidate)
+            } catch (_: Exception) {
+            }
+        }
+
+        return null
+    }
+
+    private fun fallbackFromText(raw: String): Tier3GeminiResult {
+        val normalized = raw.lowercase()
+
+        val classification = when {
+            listOf("scam", "fraud", "phishing", "otp", "extortion", "threat", "blackmail").any { normalized.contains(it) } -> "SCAM"
+            listOf("safe", "harmless", "benign").any { normalized.contains(it) } -> "SAFE"
+            else -> "UNCERTAIN"
+        }
+
+        val confidence = when {
+            listOf("high confidence", "certain", "definitely").any { normalized.contains(it) } -> "HIGH"
+            listOf("medium", "likely", "probably").any { normalized.contains(it) } -> "MEDIUM"
+            else -> "LOW"
+        }
+
+        val score = when (confidence) {
+            "HIGH" -> if (classification == "SAFE") 85 else 82
+            "MEDIUM" -> if (classification == "SAFE") 68 else 66
+            else -> if (classification == "SAFE") 35 else 45
+        }
+
+        val category = when (classification) {
+            "SAFE" -> "SAFE"
+            "SCAM" -> "SCAM"
+            else -> "UNCERTAIN"
+        }
+
+        return Tier3GeminiResult(
+            classification = classification,
+            confidence = confidence,
+            category = category,
+            evidence = raw.take(220),
+            confidenceScore = score,
+            reasoning = "Model returned non-JSON output; fallback parser applied.",
         )
     }
 
@@ -177,37 +261,41 @@ object Tier3GeminiClient : Tier3GeminiClientPort {
         val matched = tier1.matchedKeywords.joinToString(", ").ifBlank { "none" }
 
         return """
-You are an intent and abuse detection engine for India. Analyze the message below.
-Return ONLY a JSON object - no explanation, no markdown, no preamble.
+You are a smart fraud and harm detector for India chat messages.
+Act like a careful human reviewer: focus on scam intent, coercion, impersonation, extortion, harassment, and user harm.
+Do not overflag normal messages.
+If evidence is weak, return UNCERTAIN.
+Return ONLY valid JSON (no markdown).
 
-Context (last 3 messages, may be empty):
+Recent context (reference only):
 $ctx
 
-Current message:
+Current message to judge:
 $text
 
-App source: Notification
-Tier 1 score: ${tier1.score} / 100
-Tier 1 matched: $matched
+Tier1 hint score: ${tier1.score}
+Tier1 matched hints: $matched
 
-Scam categories to check:
-OTP_SCAM, KYC_SCAM, LOTTERY_SCAM, JOB_SCAM, LOAN_SCAM,
-INVESTMENT_SCAM, IMPERSONATION_SCAM, ROMANCE_SCAM,
-TECH_SUPPORT_SCAM, COURIER_SCAM, UTILITY_SCAM
+Use these categories when relevant:
+OTP_SCAM, KYC_SCAM, LOTTERY_SCAM, JOB_SCAM, LOAN_SCAM, INVESTMENT_SCAM,
+IMPERSONATION_SCAM, ROMANCE_SCAM, TECH_SUPPORT_SCAM, COURIER_SCAM, UTILITY_SCAM,
+FAKE_IDENTITY, HARASSMENT, EXTORTION, CRUELTY, SAFE, UNCERTAIN.
 
-Also detect broader malicious intent categories:
-FAKE_IDENTITY, HARASSMENT, EXTORTION, CRUELTY
+Confidence scoring rules (important):
+- confidence_score must match your real certainty on THIS message.
+- Use this scale:
+    0-20: almost certainly SAFE
+    21-40: likely SAFE but some weak suspicion
+    41-59: mixed or ambiguous evidence
+    60-79: likely scam/malicious with meaningful evidence
+    80-100: very strong direct evidence of scam/malicious intent
+- If confidence is HIGH, confidence_score should usually be >= 80.
+- If confidence is MEDIUM, confidence_score should usually be 60-79.
+- If confidence is LOW, confidence_score should usually be <= 59.
+- Never output 0 unless message is clearly harmless.
+- Base evidence on exact phrases from current message, not assumptions.
 
-Rules:
-1. Classify CURRENT MESSAGE only. Context is reference only.
-2. Never assign OTP_SCAM without OTP/code evidence in current message.
-3. UNCERTAIN is better than a forced wrong label.
-4. Consider Hinglish, transliteration, slang, bad spelling.
-5. Consider Tier 1 score as a prior - if Tier 1 is 70+ and you are uncertain, lean toward SCAM not SAFE.
-6. Short messages with unclear intent = UNCERTAIN.
-7. If message has intent to deceive identity, extort money, threaten harm, emotionally abuse, or coerce: classify as MALICIOUS with the best fitting category.
-
-Return exactly this JSON:
+Return this JSON schema exactly:
 {
     "classification": "SCAM | MALICIOUS | SAFE | UNCERTAIN | FAKE_IDENTITY | HARASSMENT | EXTORTION | CRUELTY",
   "confidence": "HIGH | MEDIUM | LOW",
