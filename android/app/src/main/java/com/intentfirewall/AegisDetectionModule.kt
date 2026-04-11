@@ -5,6 +5,7 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.os.Build
 import android.provider.Settings
 import android.content.Intent
+import android.app.role.RoleManager
 import android.content.ComponentName
 import android.text.TextUtils
 import android.view.accessibility.AccessibilityManager
@@ -14,6 +15,7 @@ import android.content.pm.PackageManager
 import android.Manifest
 import android.util.Log
 import androidx.core.content.ContextCompat
+import android.telecom.TelecomManager
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -105,7 +107,7 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
     fun checkAccessibilityServiceEnabled(promise: Promise) {
         try {
             val context = reactApplicationContext
-            val expectedClass = OpenChatAccessibilityService::class.java.name
+            val expectedClass = ScamAccessibilityService::class.java.name
             // Primary: secure settings parsing is usually most stable across OEM builds.
             val enabled = Settings.Secure.getInt(
                 context.contentResolver,
@@ -123,9 +125,9 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
             ) ?: ""
 
-            val fullName = ComponentName(context, OpenChatAccessibilityService::class.java)
+            val fullName = ComponentName(context, ScamAccessibilityService::class.java)
                 .flattenToString()
-            val shortName = ComponentName(context, OpenChatAccessibilityService::class.java)
+            val shortName = ComponentName(context, ScamAccessibilityService::class.java)
                 .flattenToShortString()
 
             val splitter = TextUtils.SimpleStringSplitter(':')
@@ -153,7 +155,7 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
                     val serviceName = info.name
                     val matchesClass =
                         serviceName == expectedClass ||
-                            serviceName == ".${OpenChatAccessibilityService::class.java.simpleName}"
+                            serviceName == ".${ScamAccessibilityService::class.java.simpleName}"
 
                     if (info.packageName == context.packageName && matchesClass) {
                         promise.resolve(true)
@@ -173,7 +175,7 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
     fun promptAccessibilityServiceSetup(promise: Promise) {
         try {
             val context = reactApplicationContext
-            val component = ComponentName(context, OpenChatAccessibilityService::class.java)
+            val component = ComponentName(context, ScamAccessibilityService::class.java)
 
             val detailsIntent = Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS").apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -284,6 +286,8 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
                 return
             }
 
+            CallProtectionPrefs.setArmed(context, true)
+
             val intent = Intent(context, AegisCallMonitor::class.java).apply {
                 action = AegisCallMonitor.ACTION_START
             }
@@ -308,6 +312,7 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
     fun stopCallProtection(promise: Promise) {
         try {
             val context = reactApplicationContext
+            CallProtectionPrefs.setArmed(context, false)
             val intent = Intent(context, AegisCallMonitor::class.java).apply {
                 action = AegisCallMonitor.ACTION_STOP
             }
@@ -325,6 +330,115 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
     }
 
     @ReactMethod
+    fun isCallProtectionArmed(promise: Promise) {
+        promise.resolve(CallProtectionPrefs.isArmed(reactApplicationContext))
+    }
+
+    @ReactMethod
+    fun checkDefaultDialerEnabled(promise: Promise) {
+        try {
+            val context = reactApplicationContext
+            val telecom = context.getSystemService(TelecomManager::class.java)
+            val packageName = telecom?.defaultDialerPackage
+            promise.resolve(packageName == context.packageName)
+        } catch (e: Exception) {
+            Log.e("AegisDetectionModule", "checkDefaultDialerEnabled failed", e)
+            promise.resolve(false)
+        }
+    }
+
+    @ReactMethod
+    fun requestDefaultDialer(promise: Promise) {
+        try {
+            val context = reactApplicationContext
+            val activity = getCurrentActivity()
+            if (activity == null) {
+                promise.resolve(false)
+                return
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val roleManager = context.getSystemService(RoleManager::class.java)
+                val isHeld = roleManager?.isRoleHeld(RoleManager.ROLE_DIALER) == true
+                if (!isHeld && roleManager != null) {
+                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER)
+                    activity.startActivityForResult(intent, 1005)
+                    promise.resolve(true)
+                    return
+                }
+                promise.resolve(true)
+                return
+            }
+
+            val intent = Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER).apply {
+                putExtra(TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, context.packageName)
+            }
+            activity.startActivity(intent)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e("AegisDetectionModule", "requestDefaultDialer failed", e)
+            promise.resolve(false)
+        }
+    }
+
+    @ReactMethod
+    fun checkOverlayPermission(promise: Promise) {
+        try {
+            promise.resolve(Settings.canDrawOverlays(reactApplicationContext))
+        } catch (e: Exception) {
+            Log.e("AegisDetectionModule", "checkOverlayPermission failed", e)
+            promise.resolve(false)
+        }
+    }
+
+    @ReactMethod
+    fun requestOverlayPermission(promise: Promise) {
+        try {
+            val context = reactApplicationContext
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                android.net.Uri.parse("package:${context.packageName}")
+            ).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e("AegisDetectionModule", "requestOverlayPermission failed", e)
+            promise.resolve(false)
+        }
+    }
+
+    @ReactMethod
+    fun startFloatingCallButton(promise: Promise) {
+        try {
+            val context = reactApplicationContext
+            if (!Settings.canDrawOverlays(context)) {
+                promise.resolve(false)
+                return
+            }
+            val intent = Intent(context, FloatingCallControlService::class.java)
+            context.startService(intent)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e("AegisDetectionModule", "startFloatingCallButton failed", e)
+            promise.resolve(false)
+        }
+    }
+
+    @ReactMethod
+    fun stopFloatingCallButton(promise: Promise) {
+        try {
+            val context = reactApplicationContext
+            context.stopService(Intent(context, FloatingCallControlService::class.java))
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e("AegisDetectionModule", "stopFloatingCallButton failed", e)
+            promise.resolve(false)
+        }
+    }
+
+    @ReactMethod
     fun getProtectionDiagnostics(promise: Promise) {
         try {
             val context = reactApplicationContext
@@ -338,12 +452,19 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
                 Manifest.permission.READ_PHONE_STATE
             ) == PackageManager.PERMISSION_GRANTED
             val hasApiKey = BuildConfig.GEMINI_API_KEYS.isNotBlank() || BuildConfig.GEMINI_API_KEY.isNotBlank()
+            val telecom = context.getSystemService(TelecomManager::class.java)
+            val defaultDialer = telecom?.defaultDialerPackage == context.packageName
+            val overlayGranted = Settings.canDrawOverlays(context)
 
             val out = Arguments.createMap().apply {
                 putBoolean("callProtectionRunning", AegisCallMonitor.isServiceRunning)
+                putBoolean("callProtectionArmed", CallProtectionPrefs.isArmed(context))
                 putBoolean("callMonitorArmed", AegisCallMonitor.monitorArmed)
                 putBoolean("inCallDetected", AegisCallMonitor.inCallDetected)
                 putBoolean("audioCaptureRunning", AegisCallMonitor.audioCaptureRunning)
+                putBoolean("defaultDialerEnabled", defaultDialer)
+                putBoolean("overlayPermissionGranted", overlayGranted)
+                putBoolean("floatingButtonEnabled", CallProtectionPrefs.isFloatingEnabled(context))
                 putBoolean("micGranted", micGranted)
                 putBoolean("phoneStateGranted", phoneStateGranted)
                 putBoolean("notificationEnabled", snapshot.notificationEnabled)

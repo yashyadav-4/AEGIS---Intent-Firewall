@@ -52,8 +52,8 @@ class AegisCallMonitor : Service() {
         private const val TAG = "AegisCallMonitor"
         private const val SAMPLE_RATE = 16000
         private const val CHUNK_SAMPLES = 3200
-        private const val WINDOW_SAMPLES = 32000
-        private const val OVERLAP_SAMPLES = 16000
+        private const val WINDOW_SAMPLES = 48000 // 3 seconds @ 16kHz
+        private const val OVERLAP_SAMPLES = 0
         private const val FLAT_PITCH_THRESHOLD = 0.15f
         private const val CHANNEL_ID = "aegis_protection"
         private const val ALERT_CHANNEL_ID = "aegis_voice_alerts"
@@ -62,6 +62,7 @@ class AegisCallMonitor : Service() {
         private const val GEMINI_WINDOW_INTERVAL_MS = 3500L
         private const val LOCAL_ANALYZE_INTERVAL_MS = 2200L
         private const val ALERT_COOLDOWN_MS = 10_000L
+        private const val MAX_PENDING_CHUNKS = 10
         const val ACTION_START = "com.aegis.START_MONITOR"
         const val ACTION_STOP = "com.aegis.STOP_MONITOR"
         const val ACTION_VOICE_SCAM_INTENT = "com.aegis.VOICE_SCAM_INTENT"
@@ -100,6 +101,25 @@ class AegisCallMonitor : Service() {
     private var lastVoiceAlertAtMs = 0L
     @Volatile
     private var lastLocalSyntheticScore = 0f
+    @Volatile
+    private var lastCallerUnknown = true
+
+    private data class VoiceChunk(
+        val waveform: FloatArray,
+        val pitchVar: Float,
+        val zcr: Float,
+        val enqueuedAt: Long,
+    )
+
+    private enum class VoiceDecision {
+        ALERT_NOW,
+        MONITOR,
+        SAFE,
+    }
+
+    private val chunkQueue = ArrayDeque<VoiceChunk>()
+    private var queueWorkerRunning = false
+    private val recentGeminiResults = ArrayDeque<GeminiVoiceDecision>()
 
     private var telephonyManager: TelephonyManager? = null
     private var audioManager: AudioManager? = null
@@ -150,6 +170,7 @@ class AegisCallMonitor : Service() {
 
         when (intent?.action) {
             ACTION_START -> {
+                updateCallerMetadataFromIntent(intent)
                 monitorEnabled = true
                 monitorArmed = true
                 isInCall = isVoiceSessionActive()
@@ -379,6 +400,8 @@ class AegisCallMonitor : Service() {
             wakeLock?.acquire()
         }
 
+        ensureQueueWorker()
+
         serviceScope.launch(Dispatchers.IO) {
             val buffer = ShortArray(CHUNK_SAMPLES)
 
@@ -438,19 +461,23 @@ class AegisCallMonitor : Service() {
                     }
 
                     if (speechActive) {
-                        maybeRunTier3VoiceIntent(window, pitchVar, zcr)
+                        enqueueChunk(window, pitchVar, zcr)
                     } else {
                         lastTier3Status = "speech_inactive_skip"
                     }
 
-                    System.arraycopy(
-                        accumulator,
-                        OVERLAP_SAMPLES,
-                        accumulator,
-                        0,
-                        WINDOW_SAMPLES - OVERLAP_SAMPLES
-                    )
-                    accumulatorPos = WINDOW_SAMPLES - OVERLAP_SAMPLES
+                    if (OVERLAP_SAMPLES > 0) {
+                        System.arraycopy(
+                            accumulator,
+                            OVERLAP_SAMPLES,
+                            accumulator,
+                            0,
+                            WINDOW_SAMPLES - OVERLAP_SAMPLES
+                        )
+                        accumulatorPos = WINDOW_SAMPLES - OVERLAP_SAMPLES
+                    } else {
+                        accumulatorPos = 0
+                    }
                 }
             }
 
@@ -474,9 +501,80 @@ class AegisCallMonitor : Service() {
         }
 
         accumulatorPos = 0
+        synchronized(chunkQueue) {
+            chunkQueue.clear()
+        }
+        synchronized(recentGeminiResults) {
+            recentGeminiResults.clear()
+        }
 
         if (wakeLock?.isHeld == true) {
             wakeLock?.release()
+        }
+    }
+
+    private fun enqueueChunk(window: FloatArray, pitchVar: Float, zcr: Float) {
+        val chunk = VoiceChunk(
+            waveform = window.copyOf(),
+            pitchVar = pitchVar,
+            zcr = zcr,
+            enqueuedAt = System.currentTimeMillis(),
+        )
+
+        synchronized(chunkQueue) {
+            if (chunkQueue.size >= MAX_PENDING_CHUNKS) {
+                chunkQueue.removeFirstOrNull()
+                lastTier3Status = "queue_overflow_drop_oldest"
+            }
+            chunkQueue.addLast(chunk)
+        }
+    }
+
+    private fun ensureQueueWorker() {
+        if (queueWorkerRunning) return
+        queueWorkerRunning = true
+
+        serviceScope.launch(Dispatchers.IO) {
+            while (isActive && isRecording) {
+                val now = SystemClock.elapsedRealtime()
+                if (geminiVoiceInFlight || now - lastGeminiVoiceAtMs < GEMINI_WINDOW_INTERVAL_MS) {
+                    delay(120L)
+                    continue
+                }
+
+                val chunk = synchronized(chunkQueue) {
+                    chunkQueue.removeFirstOrNull()
+                }
+
+                if (chunk == null) {
+                    delay(120L)
+                    continue
+                }
+
+                maybeRunTier3VoiceIntent(chunk.waveform, chunk.pitchVar, chunk.zcr)
+            }
+            queueWorkerRunning = false
+        }
+    }
+
+    private fun evaluateRollingDecision(decision: GeminiVoiceDecision): VoiceDecision {
+        synchronized(recentGeminiResults) {
+            recentGeminiResults.addLast(decision)
+            while (recentGeminiResults.size > 5) {
+                recentGeminiResults.removeFirst()
+            }
+
+            val scamCount = recentGeminiResults.count {
+                it.isScam || it.action == "alert"
+            }
+
+            val highConfidenceScam = (decision.isScam || decision.action == "alert") && decision.confidence >= 0.85f
+            return when {
+                highConfidenceScam -> VoiceDecision.ALERT_NOW
+                scamCount >= 2 -> VoiceDecision.ALERT_NOW
+                scamCount == 1 -> VoiceDecision.MONITOR
+                else -> VoiceDecision.SAFE
+            }
         }
     }
 
@@ -558,20 +656,21 @@ class AegisCallMonitor : Service() {
                 val decision = GeminiVoiceScamClassifier.analyzeLiveWindow(
                     context = this@AegisCallMonitor,
                     waveform = window,
-                    callerUnknown = true,
+                    callerUnknown = lastCallerUnknown,
                     pitchVariance = pitchVar,
                     zcr = zcr,
                     localSyntheticScore = lastLocalSyntheticScore,
                 )
 
                 if (decision != null) {
+                        val rollingDecision = evaluateRollingDecision(decision)
                         NotificationEventEmitter.sendNotification(
                             context = this@AegisCallMonitor,
                             appName = "Call Monitor",
                             title = "Live voice analysis",
                             text = decision.reason,
                             packageName = packageName,
-                            flagged = decision.isScam || decision.action == "alert",
+                            flagged = rollingDecision == VoiceDecision.ALERT_NOW,
                             matchedCategory = decision.intent,
                             conversationContext = "",
                             confidence = decision.confidence,
@@ -599,15 +698,25 @@ class AegisCallMonitor : Service() {
                     }
                     LocalBroadcastManager.getInstance(this@AegisCallMonitor).sendBroadcast(intent)
 
-                    if (decision.isScam || decision.action == "alert") {
-                        lastTier3Status = "alert:${decision.intent}:${decision.confidence}"
-                        maybeNotifyVoiceScam(decision)
+                    when (rollingDecision) {
+                        VoiceDecision.ALERT_NOW -> {
+                            lastTier3Status = "alert:${decision.intent}:${decision.confidence}"
+                            maybeNotifyVoiceScam(decision)
+                        }
+                        VoiceDecision.MONITOR -> {
+                            lastTier3Status = "monitor:${decision.intent}:${decision.confidence}"
+                        }
+                        VoiceDecision.SAFE -> {
+                            lastTier3Status = "safe:${decision.intent}:${decision.confidence}"
+                        }
+                    }
+
+                    if (rollingDecision == VoiceDecision.ALERT_NOW) {
                         Log.w(
                             TAG,
                             "Tier3 voice alert intent=${decision.intent} confidence=${decision.confidence} reason=${decision.reason}"
                         )
                     } else {
-                        lastTier3Status = "safe:${decision.intent}:${decision.confidence}"
                         Log.d(
                             TAG,
                             "Tier3 voice safe intent=${decision.intent} confidence=${decision.confidence}"
@@ -633,6 +742,10 @@ class AegisCallMonitor : Service() {
 
         val mode = audioManager?.mode ?: AudioManager.MODE_NORMAL
         return mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION
+    }
+
+    private fun updateCallerMetadataFromIntent(intent: Intent?) {
+        lastCallerUnknown = intent?.getBooleanExtra("caller_unknown", true) ?: true
     }
 
     private fun maybeNotifyVoiceScam(decision: GeminiVoiceDecision) {

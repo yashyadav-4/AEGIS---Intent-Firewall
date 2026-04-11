@@ -172,21 +172,68 @@ object GeminiScamClassifier {
             .trim()
 
         val obj = JSONObject(cleaned)
-        val isScam = obj.optBoolean("isScam", false)
-        val confidence = obj.optDouble("confidence", if (isScam) 0.75 else 0.20)
-            .toFloat()
-            .coerceIn(0f, 1f)
-        val reason = obj.optString("reason", "Tier3 analysis")
-        val rawThreatType = obj.optString("threatType", "")
-        val threatType = if (rawThreatType.equals("null", ignoreCase = true) || rawThreatType.isBlank()) {
-            null
-        } else {
-            rawThreatType
-        }
 
-        val action = obj.optString("action", if (isScam) "alert" else "safe")
-            .lowercase()
-            .let { if (it == "alert" || it == "safe") it else if (isScam) "alert" else "safe" }
+        // New strict schema support:
+        // {
+        //   "classification": "SAFE|SCAM|UNCERTAIN",
+        //   "confidence": "HIGH|MEDIUM|LOW",
+        //   "category": "...",
+        //   "evidence": "...",
+        //   "context_used": true|false,
+        //   "reasoning": "...",
+        //   "hard_rule_triggered": "..."
+        // }
+        val classificationRaw = obj.optString("classification", "").trim().uppercase()
+        val confidenceRaw = obj.optString("confidence", "").trim().uppercase()
+        val categoryRaw = obj.optString("category", "").trim()
+        val evidenceRaw = obj.optString("evidence", "").trim()
+        val reasoningRaw = obj.optString("reasoning", "").trim()
+
+        val hasNewSchema = classificationRaw.isNotBlank() || categoryRaw.isNotBlank() || confidenceRaw.isNotBlank()
+
+        val isScam: Boolean
+        val confidence: Float
+        val threatType: String?
+        val action: String
+        val reason: String
+
+        if (hasNewSchema) {
+            isScam = classificationRaw == "SCAM"
+            confidence = when (confidenceRaw) {
+                "HIGH" -> 0.92f
+                "MEDIUM" -> 0.72f
+                "LOW" -> 0.45f
+                else -> if (isScam) 0.70f else 0.25f
+            }.coerceIn(0f, 1f)
+
+            threatType = when {
+                categoryRaw.isBlank() || categoryRaw.equals("null", ignoreCase = true) -> null
+                else -> categoryRaw
+            }
+
+            action = if (classificationRaw == "SCAM") "alert" else "safe"
+            reason = listOf(evidenceRaw, reasoningRaw)
+                .filter { it.isNotBlank() }
+                .joinToString(" | ")
+                .ifBlank { "Tier3 analysis" }
+        } else {
+            // Backward compatibility with prior schema.
+            val legacyScam = obj.optBoolean("isScam", false)
+            isScam = legacyScam
+            confidence = obj.optDouble("confidence", if (legacyScam) 0.75 else 0.20)
+                .toFloat()
+                .coerceIn(0f, 1f)
+            reason = obj.optString("reason", "Tier3 analysis")
+            val rawThreatType = obj.optString("threatType", "")
+            threatType = if (rawThreatType.equals("null", ignoreCase = true) || rawThreatType.isBlank()) {
+                null
+            } else {
+                rawThreatType
+            }
+            action = obj.optString("action", if (legacyScam) "alert" else "safe")
+                .lowercase()
+                .let { if (it == "alert" || it == "safe") it else if (legacyScam) "alert" else "safe" }
+        }
 
         return GeminiDecision(
             isScam = isScam,
@@ -208,61 +255,131 @@ object GeminiScamClassifier {
         recentMessages: List<String>,
         senderKnown: Boolean,
     ): String {
-        val contextWindow = recentMessages
-            .takeLast(6)
-            .joinToString(" | ")
-            .ifBlank { "none" }
+                val contextWindow = recentMessages
+                        .takeLast(5)
+                        .joinToString("\n")
+                        .ifBlank { "[empty]" }
 
-        return """
-    You are a strict scam detection assistant for Indian chat/SMS scams.
+                val senderType = when {
+                        senderKnown -> "KNOWN_CONTACT"
+                        sender.contains("bank", ignoreCase = true) || sender.contains("support", ignoreCase = true) || sender.contains("service", ignoreCase = true) -> "BUSINESS"
+                        else -> "UNKNOWN"
+                }
 
-    Priority rule: minimize false positives. If not clearly malicious, mark safe.
+                return """
+You are a scam detection engine for real-time SMS and chat analysis in India.
+Your job is to classify the CURRENT MESSAGE only, using recent context only
+to resolve ambiguity — not to inherit risk from it.
 
-    Analyze the CURRENT message text first. Use recent context only for disambiguation.
-    Never label a short acknowledgement (for example: "yes sir", "ok", "noted") as scam unless the same message contains direct scam content.
+---
 
-    Only choose action="alert" when current message has clear scam intent such as:
-    - direct OTP/password/payment request
-    - forced urgency + account blocking/KYC fear tactics
-    - impersonation (bank/police/authority) with demand for money/data/OTP
-    - suspicious link with pressure to click or pay
+## INPUT FORMAT
 
-    Choose action="safe" for benign communication, including:
-    - school/college/work planning (example: "anyone participating in hackathon")
-    - teacher/class/group coordination
-    - normal replies, greetings, announcements, schedules, attendance, assignments
-    - generic conversation with no ask for money, OTP, credential, link click, or sensitive data
+<context>
+$contextWindow
+</context>
 
-    Understand Hinglish/Hindi-English mixed text (examples: "OTP de do", "lottery claim", "6 digit number batao").
+<current_message>
+$message
+</current_message>
 
-    Allowed threatType values only:
-    - SAFE_MESSAGE
-    - PHISHING_LINK
-    - OTP_SCAM
-    - BANKING_SCAM
-    - AUTHORITY_IMPERSONATION
-    - PAYMENT_PRESSURE
-    - JOB_SCAM
-    - SCAM_SUSPECT
+<sender_type>
+$senderType
+</sender_type>
 
-    If evidence is weak or ambiguous, choose safe with threatType=SAFE_MESSAGE.
+---
 
-Message: "$message"
-Sender: $sender
-App Source: $appSource
-Time: $timestamp
-Capture Method: $captureMethod
-Recent Context: $contextWindow
-Sender Known Contact: $senderKnown
+## CLASSIFICATION RULES
 
-Is this message a scam? Answer in JSON:
+### STEP 1 — HARD SAFE (check first, exit immediately if matched)
+
+Return SAFE with no further analysis if current message matches ANY of:
+- Pure acknowledgement: ok, okay, hlo, hello, yes, no, noted, hmm, thanks,
+    thank you, done, sure, fine, received
+- Call status strings: calling, on a call, open chat, read more,
+    missed call, declined
+- Single emoji or punctuation only
+- Purely personal/social: how are you, good morning, where are you,
+    what are you doing
+
+These are NEVER scam regardless of context.
+
+### STEP 2 — HARD SCAM (check second, exit immediately if matched)
+
+Return SCAM with high confidence if current message contains ALL of:
+
+Pattern A — Authority + Verification ask:
+    - Claims to be: bank, RBI, government, police, court, TRAI, telecom
+    - AND asks for: OTP, PIN, password, account number, Aadhaar, PAN
+
+Pattern B — Urgency + Money ask:
+    - Urgency signal: urgent, immediately, today only, last chance,
+        account blocked, legal action, arrested
+    - AND money ask: send money, pay now, transfer, recharge,
+        wallet, UPI, NEFT, RTGS
+
+Pattern C — Friend-in-distress:
+    - Identity claim from unknown number: I am [name], this is my new number
+    - AND money or help request in same or next message
+
+### STEP 3 — EVIDENCE-BOUND CATEGORY ASSIGNMENT
+
+Only assign a category if direct evidence exists in the CURRENT MESSAGE.
+Do not infer category from context alone.
+
+| Category       | Required evidence in current message                        |
+|----------------|--------------------------------------------------------------|
+| OTP_SCAM       | OTP / one-time password / verification code explicitly present |
+| KYC_SCAM       | KYC / document update / account expire / verify account      |
+| LOTTERY_SCAM   | Won / prize / reward / lucky draw / claim now                |
+| JOB_SCAM       | Work from home / part time / earn daily / task complete      |
+| LOAN_SCAM      | Instant loan / pre-approved / low interest / apply now       |
+| IMPERSONATION  | Claims false identity + request                              |
+| INVESTMENT_SCAM| Returns / profit / trading / doubling money                  |
+| GENERIC_SCAM   | Scam signals present but no specific category fits          |
+| SAFE           | No scam signals or hard-safe match                          |
+
+### STEP 4 — HINGLISH AND TRANSLITERATION HANDLING
+
+Treat these as equivalent:
+- OTP = otp = O.T.P. = "woh code" = "verification wala number"
+- Paisa = paise = money = rupee = Rs = ₹ = amount bhejna
+- Urgent = jaldi = abhi = turant = "kal tak"
+- Bank = baink = "aapka account"
+
+Do not miss scam signals because of spelling variation or transliteration.
+
+### STEP 5 — AMBIGUITY RULE
+
+If you cannot assign SCAM or SAFE with clear evidence:
+- Return UNCERTAIN
+- Do not force a category
+- State what evidence is missing
+
+---
+
+## OUTPUT FORMAT (strict JSON only)
+
 {
-"isScam": true/false,
-"confidence": 0.0-1.0,
-"reason": "brief explanation",
-"threatType": "SAFE_MESSAGE/PHISHING_LINK/OTP_SCAM/BANKING_SCAM/AUTHORITY_IMPERSONATION/PAYMENT_PRESSURE/JOB_SCAM/SCAM_SUSPECT",
-"action": "alert/safe"
+    "classification": "SAFE | SCAM | UNCERTAIN",
+    "confidence": "HIGH | MEDIUM | LOW",
+    "category": "OTP_SCAM | KYC_SCAM | LOTTERY_SCAM | JOB_SCAM | LOAN_SCAM | IMPERSONATION | INVESTMENT_SCAM | GENERIC_SCAM | SAFE | UNCERTAIN",
+    "evidence": "Exact phrase(s) from current message that triggered this classification. EMPTY if SAFE.",
+    "context_used": true | false,
+    "reasoning": "One sentence max. Why this classification was chosen.",
+    "hard_rule_triggered": "HARD_SAFE | HARD_SCAM | NONE"
 }
+
+---
+
+## STRICT CONSTRAINTS
+
+- Classify CURRENT MESSAGE only. Context is reference, not subject.
+- Never assign OTP_SCAM unless OTP evidence exists in current message.
+- Never classify UI/system strings as scam.
+- UNCERTAIN is always better than a forced wrong label.
+- Return JSON only. No explanation outside JSON.
+- Evidence field must quote directly from current message, never paraphrased.
 """.trimIndent()
     }
 

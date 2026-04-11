@@ -62,19 +62,24 @@ object GeminiVoiceScamClassifier {
         for (offset in keys.indices) {
             val idx = (startIndex + offset) % keys.size
             val key = keys[idx]
-            try {
-                lastRunStatus = "request_key_${idx + 1}"
-                val decision = callGemini(model, key, prompt, audioBase64)
-                setStartIndex(context, idx + 1, keys.size)
-                lastRunStatus = "success_key_${idx + 1}"
-                return decision.copy(model = model, keyIndex = idx + 1)
-            } catch (e: GeminiRetryableException) {
-                Log.w(TAG, "retryable failure keyIndex=${idx + 1}: ${e.message}")
-                lastRunStatus = "retryable_key_${idx + 1}:${e.message ?: "unknown"}"
-                Thread.sleep(800)
-            } catch (e: Exception) {
-                Log.e(TAG, "failure keyIndex=${idx + 1}: ${e.message}")
-                lastRunStatus = "failure_key_${idx + 1}:${e.javaClass.simpleName}"
+            for (attempt in 0..1) {
+                try {
+                    lastRunStatus = "request_key_${idx + 1}_attempt_${attempt + 1}"
+                    val decision = callGemini(model, key, prompt, audioBase64)
+                    setStartIndex(context, idx + 1, keys.size)
+                    lastRunStatus = "success_key_${idx + 1}"
+                    return decision.copy(model = model, keyIndex = idx + 1)
+                } catch (e: GeminiRetryableException) {
+                    Log.w(TAG, "retryable failure keyIndex=${idx + 1} attempt=${attempt + 1}: ${e.message}")
+                    lastRunStatus = "retryable_key_${idx + 1}:${e.message ?: "unknown"}"
+                    if (attempt == 0) {
+                        Thread.sleep(500L)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "failure keyIndex=${idx + 1}: ${e.message}")
+                    lastRunStatus = "failure_key_${idx + 1}:${e.javaClass.simpleName}"
+                    break
+                }
             }
         }
 
@@ -118,8 +123,8 @@ object GeminiVoiceScamClassifier {
 
         val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = 12_000
-            readTimeout = 12_000
+            connectTimeout = 8_000
+            readTimeout = 8_000
             doInput = true
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
