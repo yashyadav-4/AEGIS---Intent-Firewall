@@ -1,11 +1,13 @@
 package com.intentfirewall
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
@@ -25,6 +27,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
 
 class CallAudioMonitorService : Service() {
 
@@ -49,18 +53,20 @@ class CallAudioMonitorService : Service() {
     private var hasObservedCallState = false
     private var currentCallState = TelephonyManager.CALL_STATE_IDLE
     private var currentRiskScore = 0
-    private var captureChunkCount = 0
     private var activeAudioSource: Int? = null
-    private var zeroRmsStreak = 0
-    private var isSwitchingSource = false
     private var chunksSentForSession = 0
     private var responsesForSession = 0
     private var geminiReady = false
 
-    private val sampleRate = 16000
+    // Debug WAV recording
+    private var debugWavFile: File? = null
+    private var debugOutputStream: FileOutputStream? = null
+    private var totalBytesWritten = 0
+    private val DEBUG_RECORDING_ENABLED = true
+
     private val chunkSamples = 8000
     private val chunkBytes = chunkSamples * 2
-    private val minRmsForGeminiSend = 10
+    private val geminiRmsGate = 40
 
     companion object {
         const val ACTION_START = "com.intentfirewall.START_CALL_MONITOR"
@@ -99,6 +105,31 @@ class CallAudioMonitorService : Service() {
         @Volatile
         var lastGeminiStatus: String = "idle"
             private set
+
+        private const val SAMPLE_RATE = 16000
+        private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
+        private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+
+        // Ordered by likelihood of having signal during active calls on OEM devices.
+        private val SOURCE_PROBE_ORDER: List<Int> = mutableListOf(
+            MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            MediaRecorder.AudioSource.CAMCORDER,
+            MediaRecorder.AudioSource.MIC,
+            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+        ).apply {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                add(1, MediaRecorder.AudioSource.UNPROCESSED)
+            }
+        }
+
+        private fun sourceName(source: Int): String = when (source) {
+            MediaRecorder.AudioSource.MIC -> "MIC"
+            MediaRecorder.AudioSource.VOICE_COMMUNICATION -> "VOICE_COMMUNICATION"
+            MediaRecorder.AudioSource.VOICE_RECOGNITION -> "VOICE_RECOGNITION"
+            MediaRecorder.AudioSource.CAMCORDER -> "CAMCORDER"
+            MediaRecorder.AudioSource.UNPROCESSED -> "UNPROCESSED"
+            else -> "UNKNOWN($source)"
+        }
     }
 
     override fun onCreate() {
@@ -168,10 +199,7 @@ class CallAudioMonitorService : Service() {
         chunksSentForSession = 0
         responsesForSession = 0
         currentRiskScore = 0
-        captureChunkCount = 0
         activeAudioSource = null
-        zeroRmsStreak = 0
-        isSwitchingSource = false
         geminiReady = false
         totalGeminiChunksSent = 0
         totalGeminiResponses = 0
@@ -209,38 +237,54 @@ class CallAudioMonitorService : Service() {
     }
 
     private fun checkAndStartCapture() {
+        if (isCapturing) return
+
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        if (audioManager.isSpeakerphoneOn) {
-            startAudioCapture()
-        } else {
+        if (!audioManager.isSpeakerphoneOn) {
             Log.d(tag, "Speakerphone is OFF - waiting to start audio capture")
             val notifManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notifManager.notify(NOTIF_ID, buildNotification("Enable speakerphone for live scam detection"))
             emitSpeakerphonePrompt()
-            speakerPollJob?.cancel()
-            speakerPollJob = scope.launch {
-                while (isActive && isMonitorEnabled && isSessionActive && !isCapturing) {
-                    delay(2000)
-                    if (audioManager.isSpeakerphoneOn) {
-                        Log.d(tag, "Speakerphone turned ON - starting audio capture")
-                        startAudioCapture()
-                        break
-                    }
-                }
+        }
+
+        waitForSpeakerphoneAndStart(callerNumber)
+    }
+
+    private fun waitForSpeakerphoneAndStart(callerNumber: String) {
+        speakerPollJob?.cancel()
+        speakerPollJob = scope.launch {
+            val am = getSystemService(AUDIO_SERVICE) as AudioManager
+            var waited = 0
+
+            while (
+                isActive && isMonitorEnabled && isSessionActive &&
+                !am.isSpeakerphoneOn && waited < 15000 && !isCapturing
+            ) {
+                delay(500)
+                waited += 500
+            }
+
+            if (!isActive || !isMonitorEnabled || !isSessionActive || isCapturing) {
+                return@launch
+            }
+
+            if (am.isSpeakerphoneOn) {
+                Log.d("CallAudio", "Speakerphone confirmed ON after ${waited}ms — starting AudioRecord")
+                startAudioCapture(callerNumber = callerNumber)
+            } else {
+                Log.w("CallAudio", "Speakerphone not detected after 15s — starting anyway (degraded mode)")
+                startAudioCapture(callerNumber = callerNumber)
             }
         }
     }
 
-    private fun startAudioCapture(preferredSource: Int? = null) {
+    private fun startAudioCapture(callerNumber: String = this.callerNumber) {
         if (isCapturing) return
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            Log.e("CallAudio", "RECORD_AUDIO permission not granted - cannot start audio capture")
+            return
+        }
         Log.d(tag, "Starting audio capture (speakerphone active)")
-
-        val minBufSize = AudioRecord.getMinBufferSize(
-            sampleRate,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT
-        )
-        val bufSize = maxOf(minBufSize, chunkBytes * 4)
 
         try {
             val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -252,90 +296,76 @@ class CallAudioMonitorService : Service() {
             } catch (_: Exception) {
             }
 
-            val sourceCandidates = buildSourceOrder(preferredSource)
+            Log.d("CallAudio", "Starting audio source probe...")
+            val workingSource = detectWorkingAudioSource()
+            activeAudioSource = workingSource
+            Log.d("CallAudio", "Using source: ${sourceName(workingSource)}")
 
-            var selectedSource: Int? = null
-            for (source in sourceCandidates) {
+            val minBufSize = AudioRecord.getMinBufferSize(
+                SAMPLE_RATE,
+                CHANNEL_CONFIG,
+                AUDIO_FORMAT,
+            )
+            if (minBufSize <= 0) {
+                Log.e("CallAudio", "Main AudioRecord invalid min buffer size: $minBufSize")
+                return
+            }
+            val bufferSize = maxOf(minBufSize * 8, 16384)
+
+            audioRecord = AudioRecord(
+                workingSource,
+                SAMPLE_RATE,
+                CHANNEL_CONFIG,
+                AUDIO_FORMAT,
+                bufferSize,
+            )
+
+            if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
+                Log.e("CallAudio", "Main AudioRecord failed to init on ${sourceName(workingSource)}")
                 try {
-                    val candidate = AudioRecord(
-                        source,
-                        sampleRate,
-                        AudioFormat.CHANNEL_IN_MONO,
-                        AudioFormat.ENCODING_PCM_16BIT,
-                        bufSize,
-                    )
-                    if (candidate.state == AudioRecord.STATE_INITIALIZED) {
-                        audioRecord = candidate
-                        selectedSource = source
-                        break
-                    }
-                    candidate.release()
+                    audioRecord?.release()
                 } catch (_: Exception) {
                 }
-            }
-
-            if (audioRecord == null || selectedSource == null) {
-                Log.e(tag, "AudioRecord failed to initialize for MIC and VOICE_COMMUNICATION")
+                audioRecord = null
                 return
             }
 
-            Log.d(tag, "Audio capture source selected: ${audioSourceLabel(selectedSource)}")
+            Log.d("CallAudio", "AudioRecord initialized: state=${audioRecord?.state} bufSize=$bufferSize")
             Log.d(tag, "SPEAKER_STATE: ${audioManager.isSpeakerphoneOn}")
 
+            startDebugRecording(callerNumber)
             audioRecord?.startRecording()
             isCapturing = true
             isAudioCaptureRunning = true
-            activeAudioSource = selectedSource
-            captureChunkCount = 0
-            zeroRmsStreak = 0
+            Log.d("CallAudio", "AudioRecord started: source=${sourceName(workingSource)} bufSize=$bufferSize")
             Log.d(tag, "Audio capture started at 16kHz, chunk=${chunkSamples} samples")
 
             captureJob = scope.launch {
                 val buffer = ByteArray(chunkBytes)
                 while (isActive && isMonitorEnabled && isSessionActive && isCapturing) {
-                    val bytesRead = audioRecord?.read(buffer, 0, chunkBytes) ?: -1
+                    val bytesRead = audioRecord?.read(buffer, 0, buffer.size) ?: -1
                     if (bytesRead > 0) {
-                        captureChunkCount += 1
-                        val chunk = buffer.copyOf(bytesRead)
-                        val rms = estimateRms(chunk)
-                        if (rms <= 2) {
-                            zeroRmsStreak += 1
-                        } else {
-                            zeroRmsStreak = 0
-                        }
+                        val raw = buffer.copyOf(bytesRead)
+                        val rmsRaw = computeRmsFromBytes(raw, raw.size)
+                        Log.d("CallAudio", "CHUNK_RMS: $rmsRaw source=${sourceName(workingSource)}")
 
-                        if (captureChunkCount == 1 || captureChunkCount % 10 == 0) {
-                            Log.d(tag, "Capture RMS chunk=$captureChunkCount rms=$rms")
-                        }
+                        // Always persist raw audio for diagnostics, even below model gate.
+                        writeDebugChunk(raw)
 
-                        if (zeroRmsStreak >= 12 && !isSwitchingSource) {
-                            val nextSource = nextCaptureSource(activeAudioSource)
-                            if (nextSource != null) {
-                                Log.w(
-                                    tag,
-                                    "Sustained silent capture detected (streak=$zeroRmsStreak) on ${audioSourceLabel(activeAudioSource)}; switching to ${audioSourceLabel(nextSource)}"
-                                )
-                                scheduleCaptureSourceSwitch(nextSource)
-                                break
-                            }
-                        }
-
-                        if (rms < minRmsForGeminiSend) {
-                            if (captureChunkCount == 1 || captureChunkCount % 10 == 0) {
-                                Log.d(tag, "Skipping silent chunk rms=$rms")
-                            }
-                            continue
-                        }
-
-                        geminiRestAnalyzer?.addChunk(chunk)
-                        chunksSentForSession += 1
-                        totalGeminiChunksSent = chunksSentForSession
-                        lastGeminiChunkAtMs = System.currentTimeMillis()
-                        if (chunksSentForSession == 1 || chunksSentForSession % 10 == 0) {
+                        if (rmsRaw >= geminiRmsGate) {
+                            geminiRestAnalyzer?.addChunk(raw)
+                            chunksSentForSession += 1
+                            totalGeminiChunksSent = chunksSentForSession
+                            lastGeminiChunkAtMs = System.currentTimeMillis()
                             updateNotification(currentRiskScore)
-                            Log.d(tag, "Gemini stream telemetry: chunks=$chunksSentForSession responses=$responsesForSession")
+                            if (chunksSentForSession == 1 || chunksSentForSession % 10 == 0) {
+                                Log.d(tag, "Gemini stream telemetry: chunks=$chunksSentForSession responses=$responsesForSession")
+                            }
+                        } else {
+                            Log.d("CallAudio", "CHUNK_SKIPPED: rms=$rmsRaw below gate=$geminiRmsGate")
                         }
-                        tryLocalDetection(chunk)
+
+                        tryLocalDetection(raw)
                     }
                 }
             }
@@ -346,46 +376,52 @@ class CallAudioMonitorService : Service() {
         }
     }
 
-    private fun buildSourceOrder(preferredSource: Int?): List<Int> {
-        val base = mutableListOf(
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-            MediaRecorder.AudioSource.MIC,
-            MediaRecorder.AudioSource.VOICE_RECOGNITION,
-        )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            base.add(MediaRecorder.AudioSource.UNPROCESSED)
+    /**
+     * Probes each source for ~0.5 seconds and returns the first source with non-zero RMS.
+     * Falls back to VOICE_RECOGNITION when all sources are silent.
+     */
+    private fun detectWorkingAudioSource(): Int {
+        val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
+        if (minBuf <= 0) {
+            Log.w("CallAudio", "PROBE: invalid min buffer size=$minBuf; defaulting to VOICE_RECOGNITION")
+            return MediaRecorder.AudioSource.VOICE_RECOGNITION
         }
 
-        return if (preferredSource == null || !base.contains(preferredSource)) {
-            base
-        } else {
-            listOf(preferredSource) + base.filter { it != preferredSource }
-        }
-    }
-
-    private fun nextCaptureSource(current: Int?): Int? {
-        val order = buildSourceOrder(null)
-        if (current == null) return order.firstOrNull()
-        val idx = order.indexOf(current)
-        if (idx == -1) return order.firstOrNull()
-        return order.getOrNull(idx + 1)
-    }
-
-    private fun scheduleCaptureSourceSwitch(nextSource: Int) {
-        if (isSwitchingSource) return
-        isSwitchingSource = true
-
-        scope.launch {
+        val probeBuf = ByteArray(minBuf * 4)
+        for (source in SOURCE_PROBE_ORDER) {
+            var probe: AudioRecord? = null
             try {
-                stopAudioCaptureOnly()
-                delay(180)
-                if (isMonitorEnabled && isSessionActive) {
-                    startAudioCapture(preferredSource = nextSource)
+                probe = AudioRecord(source, SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT, probeBuf.size)
+                if (probe.state != AudioRecord.STATE_INITIALIZED) {
+                    Log.d("CallAudio", "PROBE: source=${sourceName(source)} failed to init - skipping")
+                    continue
                 }
+
+                probe.startRecording()
+                val bytesRead = probe.read(probeBuf, 0, probeBuf.size)
+                val rms = computeRmsFromBytes(probeBuf, bytesRead)
+                Log.d("CallAudio", "PROBE: source=${sourceName(source)} bytesRead=$bytesRead rms=$rms")
+
+                if (rms > 2) {
+                    Log.d("CallAudio", "PROBE_SELECTED: ${sourceName(source)} rms=$rms")
+                    return source
+                }
+            } catch (e: Exception) {
+                Log.e("CallAudio", "PROBE: source=${sourceName(source)} exception: ${e.message}")
             } finally {
-                isSwitchingSource = false
+                try {
+                    probe?.stop()
+                } catch (_: Exception) {
+                }
+                try {
+                    probe?.release()
+                } catch (_: Exception) {
+                }
             }
         }
+
+        Log.w("CallAudio", "PROBE: all sources returned zero - defaulting to VOICE_RECOGNITION")
+        return MediaRecorder.AudioSource.VOICE_RECOGNITION
     }
 
     private fun stopAudioCaptureOnly() {
@@ -397,41 +433,114 @@ class CallAudioMonitorService : Service() {
         }
         audioRecord?.release()
         audioRecord = null
+        stopDebugRecording()
         captureJob?.cancel()
         captureJob = null
     }
 
-    private fun estimateRms(pcm16le: ByteArray): Int {
-        if (pcm16le.size < 2) return 0
-
-        var sum = 0.0
+    private fun computeRmsFromBytes(buf: ByteArray, length: Int): Int {
+        if (length <= 1) return 0
+        var sumSq = 0.0
         var count = 0
         var i = 0
-        while (i + 1 < pcm16le.size) {
-            val lo = pcm16le[i].toInt() and 0xFF
-            val hi = pcm16le[i + 1].toInt()
-            val sample = (hi shl 8) or lo
-            sum += sample * sample.toDouble()
-            count += 1
+        val limit = minOf(length, buf.size)
+        while (i < limit - 1) {
+            val sample = ((buf[i].toInt() and 0xFF) or (buf[i + 1].toInt() shl 8)).toShort().toDouble()
+            sumSq += sample * sample
+            count++
             i += 2
         }
-        if (count == 0) return 0
-        return kotlin.math.sqrt(sum / count).toInt()
+        return if (count == 0) 0 else Math.sqrt(sumSq / count).toInt()
     }
 
-    private fun audioSourceLabel(source: Int): String {
-        return when (source) {
-            MediaRecorder.AudioSource.MIC -> "MIC"
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION -> "VOICE_COMMUNICATION"
-            MediaRecorder.AudioSource.VOICE_RECOGNITION -> "VOICE_RECOGNITION"
-            MediaRecorder.AudioSource.UNPROCESSED -> "UNPROCESSED"
-            else -> "SOURCE_$source"
+    private fun startDebugRecording(callerNumber: String) {
+        if (!DEBUG_RECORDING_ENABLED) return
+        try {
+            val dir = File(getExternalFilesDir(null), "call_debug")
+            dir.mkdirs()
+            val timestamp = System.currentTimeMillis()
+            val safe = callerNumber.replace(Regex("[^0-9+]"), "_")
+            debugWavFile = File(dir, "call_${safe}_${timestamp}.wav")
+            debugOutputStream = FileOutputStream(debugWavFile!!)
+            writeWavHeader(debugOutputStream!!, 0)
+            totalBytesWritten = 0
+            Log.d("CallAudio", "DEBUG_WAV_START: ${debugWavFile!!.absolutePath}")
+        } catch (e: Exception) {
+            Log.e("CallAudio", "DEBUG_WAV_START failed: ${e.message}")
         }
     }
 
-    private fun audioSourceLabel(source: Int?): String {
-        return if (source == null) "NONE" else audioSourceLabel(source)
+    private fun writeDebugChunk(pcm: ByteArray) {
+        if (!DEBUG_RECORDING_ENABLED) return
+        try {
+            debugOutputStream?.write(pcm)
+            totalBytesWritten += pcm.size
+        } catch (e: Exception) {
+            Log.e("CallAudio", "DEBUG_WAV_WRITE failed: ${e.message}")
+        }
     }
+
+    private fun stopDebugRecording() {
+        if (!DEBUG_RECORDING_ENABLED) return
+        try {
+            debugOutputStream?.flush()
+            debugOutputStream?.close()
+            debugWavFile?.let { file ->
+                fixWavHeader(file, totalBytesWritten)
+                val seconds = totalBytesWritten / (16000 * 2)
+                Log.d(
+                    "CallAudio",
+                    "DEBUG_WAV_SAVED: ${file.absolutePath} | bytes=$totalBytesWritten | duration=${seconds}s",
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("CallAudio", "DEBUG_WAV_STOP failed: ${e.message}")
+        } finally {
+            debugOutputStream = null
+            debugWavFile = null
+            totalBytesWritten = 0
+        }
+    }
+
+    private fun writeWavHeader(out: FileOutputStream, dataSize: Int) {
+        val sampleRate = 16000
+        val channels = 1
+        val bitsPerSample = 16
+        val byteRate = sampleRate * channels * bitsPerSample / 8
+        val blockAlign = (channels * bitsPerSample / 8).toShort()
+        val totalSize = 36 + dataSize
+        out.write("RIFF".toByteArray(Charsets.US_ASCII))
+        out.write(intToLEBytes(totalSize))
+        out.write("WAVE".toByteArray(Charsets.US_ASCII))
+        out.write("fmt ".toByteArray(Charsets.US_ASCII))
+        out.write(intToLEBytes(16))
+        out.write(shortToLEBytes(1))
+        out.write(shortToLEBytes(channels.toShort()))
+        out.write(intToLEBytes(sampleRate))
+        out.write(intToLEBytes(byteRate))
+        out.write(shortToLEBytes(blockAlign))
+        out.write(shortToLEBytes(bitsPerSample.toShort()))
+        out.write("data".toByteArray(Charsets.US_ASCII))
+        out.write(intToLEBytes(dataSize))
+    }
+
+    private fun fixWavHeader(file: File, dataSize: Int) {
+        val raf = java.io.RandomAccessFile(file, "rw")
+        try {
+            raf.seek(4)
+            raf.write(intToLEBytes(36 + dataSize))
+            raf.seek(40)
+            raf.write(intToLEBytes(dataSize))
+        } finally {
+            raf.close()
+        }
+    }
+
+    private fun intToLEBytes(v: Int): ByteArray =
+        byteArrayOf(v.toByte(), (v shr 8).toByte(), (v shr 16).toByte(), (v shr 24).toByte())
+
+    private fun shortToLEBytes(v: Short): ByteArray =
+        byteArrayOf(v.toByte(), (v.toInt() shr 8).toByte())
 
     private fun tryLocalDetection(chunk: ByteArray) {
         try {
@@ -447,8 +556,6 @@ class CallAudioMonitorService : Service() {
         stopAudioCaptureOnly()
         isSessionActive = false
         activeAudioSource = null
-        zeroRmsStreak = 0
-        isSwitchingSource = false
 
         geminiRestAnalyzer?.flush()
         geminiRestAnalyzer?.shutdown()

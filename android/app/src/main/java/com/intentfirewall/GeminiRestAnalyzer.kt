@@ -21,6 +21,14 @@ class GeminiRestAnalyzer(
     private val onRiskScore: (score: Int, intent: String, reason: String) -> Unit,
     private val onError: (error: String) -> Unit,
 ) {
+    companion object {
+        private const val WINDOW_SIZE_BYTES = 480000
+        private const val FIRST_WINDOW_SIZE_BYTES = 240000
+        private const val MODEL = "gemini-3.1-flash-lite-preview"
+        private const val GEMINI_ENDPOINT =
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent"
+    }
+
     private val tag = "GeminiRestAnalyzer"
 
     private val apiKeys: List<String> = listOf(
@@ -43,10 +51,7 @@ class GeminiRestAnalyzer(
     private val keyIndex = AtomicInteger(0)
     private val cooldownMs = 60_000L
 
-    private val model = "gemini-2.5-flash-lite"
-    private fun endpointFor(key: String): String {
-        return "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$key"
-    }
+    private fun endpointFor(): String = GEMINI_ENDPOINT
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -54,30 +59,58 @@ class GeminiRestAnalyzer(
         .writeTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    // Start with a faster first decision (5s), then switch to 15s steady windows.
-    // 5s at 16kHz 16-bit mono = 160000 bytes.
-    // 15s at 16kHz 16-bit mono = 480000 bytes.
     private val windowBuffer = mutableListOf<ByteArray>()
-    private val firstWindowTargetBytes = 160000
-    private val steadyWindowTargetBytes = 480000
-    private var currentWindowTargetBytes = firstWindowTargetBytes
     private var currentBufferSize = 0
+    private var isFirstWindow = true
     private var isAnalyzing = false
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val systemPrompt = """
-        You are a real-time scam call detector for Indian phone calls.
-        Analyze the provided audio for scam patterns.
-        Respond with ONLY a valid JSON object, no prose, no markdown:
-        {"risk": <0-100>, "intent": "<safe|otp_request|payment_pressure|impersonation|urgency_manipulation|kyc_panic|remote_access>", "flag": <true if risk >= 55>, "reason": "<max 12 words>"}
+    private val SYSTEM_PROMPT = """
+You are a real-time scam call detector for Indian phone calls (Hindi, English, Hinglish).
+Analyze the provided audio for scam patterns.
 
-        Scam signals: OTP/PIN requests, bank/govt impersonation, account block threats,
-        urgency pressure, AnyDesk/TeamViewer install requests, UPI transfer demands, KYC panic.
+Respond ONLY with a valid JSON object matching this exact schema - no prose, no markdown, no code fences:
+{"risk": <integer 0-100>, "intent": "<one of: safe|otp_request|payment_pressure|impersonation|urgency_manipulation|kyc_panic|remote_access>", "flag": <true if risk >= 55>, "reason": "<max 12 words in English>"}
 
-        If audio is unclear or silent respond: {"risk": 0, "intent": "safe", "flag": false, "reason": "no signal detected"}
-        Never refuse. Always return valid JSON only.
-        Caller number context: $callerNumber.
-    """.trimIndent()
+English scam signals to detect:
+- OTP or PIN requests ("share your OTP", "tell me the code")
+- Bank or government impersonation ("I'm calling from SBI/RBI/TRAI/police/CBI")
+- Account block threats ("your account will be blocked/suspended")
+- Urgency and pressure tactics ("you must act now", "only 30 minutes left")
+- Remote access requests ("install AnyDesk", "install TeamViewer", "give me access")
+- UPI transfer demands ("send money to verify", "transfer to unblock")
+- KYC panic ("your KYC is expired", "update KYC immediately")
+
+Hindi/Hinglish scam signals to detect:
+- "OTP batao", "OTP share karo", "OTP bata do"
+- "aapka account band ho jayega", "account block ho gaya"
+- "KYC update karo", "KYC expire ho gayi", "KYC verify karo"
+- "paisa transfer karo", "paise bhejo", "abhi transfer karo"
+- "link pe click karo", "yeh app install karo"
+- "mujhe remote access do", "screen share karo"
+- "aapke naam pe FIR hai", "police aa rahi hai", "CBI se hoon"
+- "income tax notice aaya hai", "arrest hoga"
+- "lottery lagi hai", "prize jeeta hai", "reward claim karo"
+- "pin number batao", "card number batao"
+- "ek baar OTP share karo sirf verify ke liye"
+- "account safe karne ke liye abhi karo"
+
+If audio is silent, unclear, ambient noise only, or no speech detected:
+{"risk": 0, "intent": "safe", "flag": false, "reason": "no speech detected"}
+
+Rules:
+- Never refuse to respond
+- Always return valid JSON only
+- If speech is present but not a scam, return risk 0-20
+- If speech matches 1-2 scam signals, return risk 40-65
+- If speech matches 3+ scam signals, return risk 75-95
+""".trimIndent()
+
+    init {
+        scope.launch {
+            runModelProbe()
+        }
+    }
 
     private fun pickKey(): Pair<Int, String>? {
         if (apiKeys.isEmpty()) {
@@ -104,24 +137,138 @@ class GeminiRestAnalyzer(
         Log.w(tag, "Key index $idx on 429 cooldown for ${cooldownMs / 1000}s")
     }
 
+    private fun logModelDeadIfNeeded(responseCode: Int, errorText: String) {
+        if (responseCode == 404 || (responseCode == 400 && errorText.contains("not found", ignoreCase = true))) {
+            Log.e(tag, "MODEL_DEAD: The model '$MODEL' does not exist or was shut down. Update MODEL constant.")
+        }
+    }
+
+    private fun buildRequestBody(pcmBytes: ByteArray, callerNumber: String): String {
+        val base64Audio = Base64.encodeToString(pcmBytes, Base64.NO_WRAP)
+        val durationSec = pcmBytes.size / (16000f * 2f)
+        Log.d(tag, "WINDOW: bytes=${pcmBytes.size} duration=${durationSec}s")
+
+        return JSONObject().apply {
+            put("system_instruction", JSONObject().apply {
+                put("parts", JSONArray().apply {
+                    put(JSONObject().put("text", SYSTEM_PROMPT))
+                })
+            })
+            put("contents", JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("parts", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("inline_data", JSONObject().apply {
+                                put("mime_type", "audio/l16;rate=16000;channels=1")
+                                put("data", base64Audio)
+                            })
+                        })
+                        put(
+                            JSONObject().put(
+                                "text",
+                                "Caller number: $callerNumber. Analyze this audio for scam patterns.",
+                            ),
+                        )
+                    })
+                })
+            })
+            put("generationConfig", JSONObject().apply {
+                put("temperature", 0.1)
+                put("maxOutputTokens", 150)
+                put("responseMimeType", "application/json")
+            })
+        }.toString()
+    }
+
+    private fun sendToGemini(requestBodyJson: String, keyIndex: Int, apiKey: String): Pair<Int, String> {
+        val request = Request.Builder()
+            .url(endpointFor())
+            .addHeader("x-goog-api-key", apiKey)
+            .post(requestBodyJson.toRequestBody("application/json".toMediaType()))
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            val responseCode = response.code
+            val responseText = response.body?.string() ?: ""
+            Log.d(tag, "REST_RESPONSE: code=$responseCode keyIndex=$keyIndex")
+
+            if (responseCode != 200 && responseCode != 429) {
+                val body = if (responseText.isBlank()) "no error body" else responseText
+                Log.e(tag, "API_ERROR: code=$responseCode key=$keyIndex error=$body")
+                logModelDeadIfNeeded(responseCode, responseText)
+            }
+
+            return Pair(responseCode, responseText)
+        }
+    }
+
+    private fun runModelProbe() {
+        try {
+            val apiKey = apiKeys.firstOrNull()
+            if (apiKey.isNullOrBlank()) {
+                Log.e(tag, "MODEL_PROBE: no API key configured")
+                return
+            }
+
+            val testBody = JSONObject().apply {
+                put("contents", JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("role", "user")
+                        put("parts", JSONArray().apply {
+                            put(JSONObject().put("text", "Reply with exactly: OK"))
+                        })
+                    })
+                })
+                put("generationConfig", JSONObject().apply {
+                    put("maxOutputTokens", 5)
+                })
+            }.toString()
+
+            val request = Request.Builder()
+                .url(endpointFor())
+                .addHeader("x-goog-api-key", apiKey)
+                .post(testBody.toRequestBody("application/json".toMediaType()))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val code = response.code
+                val responseText = response.body?.string() ?: ""
+                if (code == 200) {
+                    Log.d(tag, "MODEL_PROBE: $MODEL is ALIVE (code=200)")
+                } else {
+                    val body = if (responseText.isBlank()) "no error body" else responseText
+                    Log.e(tag, "MODEL_PROBE: $MODEL returned code=$code error=$body - MODEL MAY BE DEAD")
+                    logModelDeadIfNeeded(code, responseText)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "MODEL_PROBE: exception ${e.message}")
+        }
+    }
+
     fun addChunk(pcmBytes: ByteArray) {
         synchronized(windowBuffer) {
             windowBuffer.add(pcmBytes.copyOf())
             currentBufferSize += pcmBytes.size
         }
 
-        if (currentBufferSize >= currentWindowTargetBytes && !isAnalyzing) {
+        val threshold = if (isFirstWindow) FIRST_WINDOW_SIZE_BYTES else WINDOW_SIZE_BYTES
+        if (currentBufferSize >= threshold && !isAnalyzing) {
             val snapshot: List<ByteArray>
             synchronized(windowBuffer) {
                 snapshot = windowBuffer.toList()
                 windowBuffer.clear()
                 currentBufferSize = 0
             }
-            analyzeWindow(snapshot)
+            val drainedBytes = snapshot.sumOf { it.size }
+            Log.d(tag, "BUFFER_DRAINED: chunks=${snapshot.size} bytes=$drainedBytes threshold=$threshold")
+            isFirstWindow = false
+            analyzeWindow(snapshot, threshold)
         }
     }
 
-    private fun analyzeWindow(chunks: List<ByteArray>) {
+    private fun analyzeWindow(chunks: List<ByteArray>, threshold: Int) {
         isAnalyzing = true
         scope.launch {
             try {
@@ -142,51 +289,19 @@ class GeminiRestAnalyzer(
                     offset += chunk.size
                 }
 
-                val b64 = Base64.encodeToString(combined, Base64.NO_WRAP)
+                val requestBody = buildRequestBody(combined, callerNumber)
                 Log.d(
                     tag,
-                    "Analyzing window: bytes=$totalSize keyIndex=$keyIdx model=$model target=$currentWindowTargetBytes",
+                    "Analyzing window: bytes=$totalSize keyIndex=$keyIdx model=$MODEL target=$threshold",
                 )
 
-                val requestBody = JSONObject().apply {
-                    put("system_instruction", JSONObject().apply {
-                        put("parts", JSONArray().apply {
-                            put(JSONObject().apply { put("text", systemPrompt) })
-                        })
-                    })
-                    put("contents", JSONArray().apply {
-                        put(JSONObject().apply {
-                            put("role", "user")
-                            put("parts", JSONArray().apply {
-                                put(JSONObject().apply {
-                                    put("inline_data", JSONObject().apply {
-                                        put("mime_type", "audio/pcm;rate=16000")
-                                        put("data", b64)
-                                    })
-                                })
-                                put(JSONObject().apply {
-                                    put("text", "Analyze this audio for scam patterns and respond with JSON only.")
-                                })
-                            })
-                        })
-                    })
-                    put("generation_config", JSONObject().apply {
-                        put("response_mime_type", "application/json")
-                        put("temperature", 0.1)
-                    })
-                }.toString()
+                val initialResult = sendToGemini(requestBody, keyIdx, apiKey)
+                val responseCode = initialResult.first
+                val responseText = initialResult.second
 
-                val request = Request.Builder()
-                    .url(endpointFor(apiKey))
-                    .post(requestBody.toRequestBody("application/json".toMediaType()))
-                    .build()
-
-                val response = client.newCall(request).execute()
-                val responseText = response.body?.string() ?: ""
-
-                when (response.code) {
+                when (responseCode) {
                     200 -> {
-                        Log.d(tag, "REST_RESPONSE: code=200 keyIndex=$keyIdx")
+                        Log.d(tag, "PARSE_INPUT: $responseText")
                         parseResponse(responseText)
                     }
 
@@ -199,17 +314,13 @@ class GeminiRestAnalyzer(
                         var retryPair = pickKey()
                         while (!handled && retryPair != null && attempts < apiKeys.size) {
                             attempts += 1
-                            val retryRequest = Request.Builder()
-                                .url(endpointFor(retryPair.second))
-                                .post(requestBody.toRequestBody("application/json".toMediaType()))
-                                .build()
+                            val retryResult = sendToGemini(requestBody, retryPair.first, retryPair.second)
+                            val retryCode = retryResult.first
+                            val retryText = retryResult.second
 
-                            val retryResponse = client.newCall(retryRequest).execute()
-                            val retryText = retryResponse.body?.string() ?: ""
-
-                            when (retryResponse.code) {
+                            when (retryCode) {
                                 200 -> {
-                                    Log.d(tag, "REST_RESPONSE: code=200 keyIndex=${retryPair.first} (retry-$attempts)")
+                                    Log.d(tag, "PARSE_INPUT: $retryText")
                                     parseResponse(retryText)
                                     handled = true
                                 }
@@ -221,8 +332,7 @@ class GeminiRestAnalyzer(
                                 }
 
                                 else -> {
-                                    Log.e(tag, "Retry error ${retryResponse.code}: $retryText")
-                                    onError("API error ${retryResponse.code}")
+                                    onError("API error $retryCode")
                                     handled = true
                                 }
                             }
@@ -234,8 +344,7 @@ class GeminiRestAnalyzer(
                     }
 
                     else -> {
-                        Log.e(tag, "REST error ${response.code}: $responseText")
-                        onError("API error ${response.code}")
+                        onError("API error $responseCode")
                     }
                 }
             } catch (e: Exception) {
@@ -243,10 +352,6 @@ class GeminiRestAnalyzer(
                 onError(e.message ?: "Unknown error")
             } finally {
                 isAnalyzing = false
-                if (currentWindowTargetBytes != steadyWindowTargetBytes) {
-                    currentWindowTargetBytes = steadyWindowTargetBytes
-                    Log.d(tag, "Switched analyzer window target to steady=$steadyWindowTargetBytes bytes")
-                }
             }
         }
     }
@@ -283,7 +388,11 @@ class GeminiRestAnalyzer(
             windowBuffer.clear()
             currentBufferSize = 0
         }
-        analyzeWindow(snapshot)
+        val threshold = if (isFirstWindow) FIRST_WINDOW_SIZE_BYTES else WINDOW_SIZE_BYTES
+        val drainedBytes = snapshot.sumOf { it.size }
+        Log.d(tag, "BUFFER_DRAINED: chunks=${snapshot.size} bytes=$drainedBytes threshold=$threshold flush=true")
+        isFirstWindow = false
+        analyzeWindow(snapshot, threshold)
     }
 
     fun shutdown() {
