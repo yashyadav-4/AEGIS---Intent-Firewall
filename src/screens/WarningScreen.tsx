@@ -68,7 +68,7 @@ const WarningScreen = ({
         styles.container,
         {opacity: fadeAnim, transform: [{translateY: slideAnim}]},
       ]}>
-      <StatusBar barStyle="light-content" backgroundColor="#E63946" />
+      <StatusBar barStyle="light-content" backgroundColor="#FF2A2A" />
 
       {/* Top Section */}
       <View style={styles.topSection}>
@@ -151,7 +151,7 @@ const WarningScreen = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#E63946',
+    backgroundColor: '#FF2A2A',
   },
   topSection: {
     flex: 1,
@@ -166,7 +166,7 @@ const styles = StyleSheet.create({
   },
   warningTitle: {
     fontSize: 36,
-    fontWeight: 'bold',
+    fontFamily: 'SpaceGrotesk', fontWeight: 'bold',
     color: '#fff',
     letterSpacing: 2,
     textAlign: 'center',
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
   },
   categoryText: {
     color: '#fff',
-    fontWeight: 'bold',
+    fontFamily: 'SpaceGrotesk', fontWeight: 'bold',
     fontSize: 12,
     letterSpacing: 1,
   },
@@ -208,7 +208,7 @@ const styles = StyleSheet.create({
   },
   confidenceValue: {
     color: '#fff',
-    fontWeight: 'bold',
+    fontFamily: 'SpaceGrotesk', fontWeight: 'bold',
     fontSize: 13,
   },
   confidenceBarBg: {
@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
   disclaimerTitle: {
     color: '#F4A261',
     fontSize: 14,
-    fontWeight: 'bold',
+    fontFamily: 'SpaceGrotesk', fontWeight: 'bold',
     marginBottom: 8,
     textTransform: 'uppercase',
   },
@@ -253,7 +253,7 @@ const styles = StyleSheet.create({
   },
   explanationTitle: {
     color: '#fff',
-    fontWeight: 'bold',
+    fontFamily: 'SpaceGrotesk', fontWeight: 'bold',
     fontSize: 14,
     marginBottom: 8,
   },
@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
   },
   tacticText: {
     color: '#fff',
-    fontWeight: 'bold',
+    fontFamily: 'SpaceGrotesk', fontWeight: 'bold',
     fontSize: 11,
     letterSpacing: 1,
   },
@@ -288,12 +288,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   blockButtonText: {
-    color: '#E63946',
-    fontWeight: 'bold',
+    color: '#FF2A2A',
+    fontFamily: 'SpaceGrotesk', fontWeight: 'bold',
     fontSize: 16,
   },
   blockButtonSubText: {
-    color: '#E63946',
+    color: '#FF2A2A',
     fontSize: 10,
     marginTop: 2,
     opacity: 0.8,
@@ -308,7 +308,7 @@ const styles = StyleSheet.create({
   },
   helpButtonText: {
     color: '#fff',
-    fontWeight: 'bold',
+    fontFamily: 'SpaceGrotesk', fontWeight: 'bold',
     fontSize: 16,
   },
   dismissButton: {

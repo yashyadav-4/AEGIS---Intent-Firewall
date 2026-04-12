@@ -15,6 +15,32 @@ object RegexSentinel {
         val index: Int
     )
 
+    data class RegexResult(
+        val isScam: Boolean,
+        val confidence: Float,
+        val detections: List<String>
+    )
+
+    fun analyzeCallTranscript(text: String): RegexResult {
+        // Hinglish patterns for call context only
+        // Triggered on user's own speech (not caller's)
+        val patterns = listOf(
+            Regex("""\b(otp|one.?time)\b""", RegexOption.IGNORE_CASE) to 0.85f,
+            Regex("""\b(pin|password)\b.{0,20}\b(share|bata|dedo|batao)\b""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)) to 0.90f,
+            Regex("""\b(account|khata).{0,20}\b(number|detail)\b""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)) to 0.70f,
+            Regex("""\b(transfer|bhejo|send).{0,20}\b(money|paisa|amount|rupee)\b""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)) to 0.80f,
+        )
+        val matches = patterns
+            .filter { (regex, _) -> regex.containsMatchIn(text) }
+            .map { (_, conf) -> conf }
+        val maxConf = matches.maxOrNull() ?: 0f
+        return RegexResult(
+            isScam = maxConf >= 0.70f,
+            confidence = maxConf,
+            detections = emptyList()
+        )
+    }
+
     data class HinglishScamResult(
         val detected: Boolean,
         val categories: List<String>,
@@ -40,7 +66,7 @@ object RegexSentinel {
         CompiledPattern("OTP_HARVEST", "\\bbank.*otp\\b", Regex("\\bbank.*otp\\b", RegexOption.IGNORE_CASE)),
 
         // GROUP 2 - FINANCIAL_PRESSURE
-        CompiledPattern("FINANCIAL_PRESSURE", "\\bsend.*money\\b", Regex("\\bsend.*money\\b", RegexOption.IGNORE_CASE)),
+        CompiledPattern("FINANCIAL_PRESSURE", "\\bsend.*(?:money|₹|rs|rupees)\\b", Regex("\\bsend.*(?:money|₹|rs|rupees)\\b", RegexOption.IGNORE_CASE)),
         CompiledPattern("FINANCIAL_PRESSURE", "\\btransfer.*amount\\b", Regex("\\btransfer.*amount\\b", RegexOption.IGNORE_CASE)),
         CompiledPattern("FINANCIAL_PRESSURE", "\\bpay.*immediately\\b", Regex("\\bpay.*immediately\\b", RegexOption.IGNORE_CASE)),
         CompiledPattern("FINANCIAL_PRESSURE", "\\burgent.*payment\\b", Regex("\\burgent.*payment\\b", RegexOption.IGNORE_CASE)),
@@ -97,7 +123,62 @@ object RegexSentinel {
         CompiledPattern("IMPERSONATION", "\\bcbi.*officer\\b", Regex("\\bcbi.*officer\\b", RegexOption.IGNORE_CASE)),
         CompiledPattern("IMPERSONATION", "\\bincome.?tax.*notice\\b", Regex("\\bincome.?tax.*notice\\b", RegexOption.IGNORE_CASE)),
         CompiledPattern("IMPERSONATION", "\\barrest.*warrant\\b", Regex("\\barrest.*warrant\\b", RegexOption.IGNORE_CASE)),
-        CompiledPattern("IMPERSONATION", "\\bcustoms.*package\\b", Regex("\\bcustoms.*package\\b", RegexOption.IGNORE_CASE)),
+        // GROUP 7 - HINGLISH_SCAM
+        CompiledPattern("OTP_HARVEST_HINGLISH", "\\botp\\s*(bata|de|bhejo|share|dedo|batao)\\b", Regex("\\botp\\s*(bata|de|bhejo|share|dedo|batao)\\b", RegexOption.IGNORE_CASE)),
+        CompiledPattern("OTP_HARVEST_HINGLISH", "\\b(apna|aapka)\\s*(pin|password|otp)\\s*(batao|dedo|share)\\b", Regex("\\b(apna|aapka)\\s*(pin|password|otp)\\s*(batao|dedo|share)\\b", RegexOption.IGNORE_CASE)),
+        CompiledPattern("AUTHORITY_HINDI", "\\b(mai|main|hum)\\s*(cbi|ed|rbi|trai|income tax|cyber crime)\\b", Regex("\\b(mai|main|hum)\\s*(cbi|ed|rbi|trai|income tax|cyber crime)\\b", RegexOption.IGNORE_CASE)),
+        CompiledPattern("URGENCY_HINGLISH", "\\b(abhi|turant|foran|jaldi)\\s*(transfer|payment|pay|bhejo)\\b", Regex("\\b(abhi|turant|foran|jaldi)\\s*(transfer|payment|pay|bhejo)\\b", RegexOption.IGNORE_CASE)),
+        CompiledPattern("URGENCY_HINGLISH", "\\b(account|sim|number)\\s*(band|block|suspend)\\b", Regex("\\b(account|sim|number)\\s*(band|block|suspend)\\b", RegexOption.IGNORE_CASE)),
+        CompiledPattern("FINANCIAL_HINGLISH", "\\b(upi|phonepay|gpay|paytm)\\s*(pin|id|number)\\b", Regex("\\b(upi|phonepay|gpay|paytm)\\s*(pin|id|number)\\b", RegexOption.IGNORE_CASE)),
+    )
+
+    // GROUP 7 — HINGLISH_SCAM
+    // Covers Hindi-English mixed scam phrases
+    // Specifically tuned for Indian telecom fraud
+    private val GROUP_7_HINGLISH = listOf(
+        // Authority impersonation in Hinglish
+        Regex("\\b(main|mein|mai)\\s*(sbi|rbi|hdfc|icici|bank|police|cbi)\\s*(se|ka|officer)\\b", 
+              RegexOption.IGNORE_CASE),
+        Regex("\\b(officer|sahab|inspector)\\s*(bol|speaking|here|hun|hoon)\\b", 
+              RegexOption.IGNORE_CASE),
+        Regex("\\b(cyber|cybercrime)\\s*(cell|police|department|se)\\b", 
+              RegexOption.IGNORE_CASE),
+        Regex("\\bbank.{0,10}(bol raha|calling|se hun)\\b", 
+              RegexOption.IGNORE_CASE),
+        
+        // OTP requests in Hinglish
+        Regex("\\b(otp|top|o\\.t\\.p).{0,15}(bata|de|bhejo|share|dedo|batao|dijiye|bataiye)\\b", 
+              RegexOption.IGNORE_CASE),
+        Regex("\\b(bata|de|dedo|batao|share karo).{0,10}(otp|top|code|number)\\b", 
+              RegexOption.IGNORE_CASE),
+        Regex("\\b(apna|aapka|tera|tumhara).{0,10}(otp|pin|password|code)\\b", 
+              RegexOption.IGNORE_CASE),
+        
+        // Urgency in Hinglish
+        Regex("\\b(abhi|turant|jaldi|fauran).{0,10}(bata|de|karo|kijiye|bhejo)\\b", 
+              RegexOption.IGNORE_CASE),
+        Regex("\\b(warna|nahi\\s*to).{0,15}(block|band|action|arrest|case)\\b", 
+              RegexOption.IGNORE_CASE),
+        Regex("\\b(sirf|bas).{0,5}(\\d+).{0,5}(minute|second|ghanta|din)\\b", 
+              RegexOption.IGNORE_CASE),
+        Regex("\\b(account|khata).{0,10}(band|block|suspend).{0,10}(ho\\s*ga|hoga|jayega)\\b", 
+              RegexOption.IGNORE_CASE),
+        
+        // Financial pressure in Hinglish
+        Regex("\\b(paisa|paise|rupaye|amount).{0,10}(bhejo|transfer|do|de)\\b", 
+              RegexOption.IGNORE_CASE),
+        Regex("\\bupi.{0,10}(pin|id|number|send|bhejo)\\b", 
+              RegexOption.IGNORE_CASE),
+        Regex("\\b(fine|penalty|tax|bail).{0,10}(bhar|pay|de|bharo)\\b", 
+              RegexOption.IGNORE_CASE),
+        
+        // Threat escalation in Hinglish  
+        Regex("\\b(ghar|address).{0,10}(aayenge|aao|visit|bhejenge)\\b", 
+              RegexOption.IGNORE_CASE),
+        Regex("\\b(arrest|pakad|jail).{0,10}(ho|kar|lenge|jayenge)\\b", 
+              RegexOption.IGNORE_CASE),
+        Regex("\\b(case|fir|complaint).{0,10}(file|darj|hoga|karenge)\\b", 
+              RegexOption.IGNORE_CASE)
     )
 
     private val HINGLISH_SCAM_PATTERNS = mapOf(
@@ -167,6 +248,17 @@ object RegexSentinel {
                     flagged = true,
                     matchedCategory = entry.category,
                     matchedPattern = entry.pattern
+                )
+            }
+        }
+
+        for (pattern in GROUP_7_HINGLISH) {
+            val match = pattern.find(text)
+            if (match != null) {
+                return SentinelResult(
+                    flagged = true,
+                    matchedCategory = "HINGLISH_SCAM",
+                    matchedPattern = match.value
                 )
             }
         }

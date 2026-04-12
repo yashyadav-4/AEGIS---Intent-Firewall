@@ -90,6 +90,13 @@ def category_specs():
                 "This is {agency}. An FIR has been filed against your Aadhaar {aadhaar}. Call {phone} immediately.",
                 "Income Tax Department: Arrest warrant issued for PAN {pan}. Pay ₹{amount} to avoid arrest.",
                 "CBI notice: Your account linked to money laundering. Contact officer {phone} in {hours} hours.",
+                "Sir, aapke naam par ek complaint aayi hai investigation department se. Seriously baat hai, please cooperate otherwise consequences bahut bhaari honge. Verification ke liye ek code aayega usse share karein jaldi.",
+                "Verification pending from your side. Delay will result in automatic closure of access.",
+                "Bhai sun, ek important baat hai. Teri taraf se verification nahi hua. Agar abhi nahi kiya toh problem ho jayega. Simple sa process hai, bas ek message aayega usko forward kar dena.",
+                "Sir investigation chal rahi hai aapke against, statement aur code confirm karo.",
+                "Aapka number illegal activities me use ho raha hai, immediately verification code bhejo warna police aayegi.",
+                "Official department se enquiry aayi hai, apna last text me aaya hua code confirm karein abhi.",
+                "Apke naam pe complaint darj hui hai cyber branch me. Bachna hai to OTP provide karo for clearance."
             ],
             "slots": {
                 "agency": lambda: random.choice(["CBI", "RBI", "Income Tax Department", "Cybercrime Cell", "ED"]),
@@ -173,7 +180,7 @@ def render_template(template, slots):
     return template.format(**values)
 
 
-def generate_synthetic_single_turns(specs, per_category=200):
+def generate_synthetic_single_turns(specs, per_category=2000):
     samples = []
     for category, meta in specs.items():
         templates = meta["templates"]
@@ -325,8 +332,8 @@ def main():
     part1 = parse_sms_spam_from_zip(SMS_ZIP_PATH)
 
     specs = category_specs()
-    part2 = generate_synthetic_single_turns(specs, per_category=200)
-    part3 = generate_multi_turn_dialogues(specs, scam_count=500, benign_count=500)
+    part2 = generate_synthetic_single_turns(specs, per_category=2000)
+    part3 = generate_multi_turn_dialogues(specs, scam_count=5000, benign_count=5000)
 
     records = list(itertools.chain(part1, part2, part3))
     random.seed(42)

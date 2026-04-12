@@ -6,6 +6,11 @@ import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
+import com.pluto.Pluto
+import com.pluto.plugins.exceptions.PlutoExceptionsPlugin
+import com.pluto.plugins.logger.PlutoLoggerPlugin
+import com.pluto.plugins.network.PlutoNetworkPlugin
+import com.pluto.plugins.preferences.PlutoSharePreferencesPlugin
 
 class MainApplication : Application(), ReactApplication {
 
@@ -23,5 +28,12 @@ class MainApplication : Application(), ReactApplication {
   override fun onCreate() {
     super.onCreate()
     loadReactNative(this)
+
+    Pluto.Installer(this)
+        .addPlugin(PlutoExceptionsPlugin("exceptions"))
+        .addPlugin(PlutoLoggerPlugin("logger"))
+        .addPlugin(PlutoNetworkPlugin("network"))
+        .addPlugin(PlutoSharePreferencesPlugin("sharedPref"))
+        .install()
   }
 }

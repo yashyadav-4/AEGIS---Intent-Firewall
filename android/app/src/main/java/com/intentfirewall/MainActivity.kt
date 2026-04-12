@@ -5,13 +5,17 @@ import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 
+import android.content.Intent
 import android.os.Bundle
-import org.devio.rn.splashscreen.SplashScreen
+import androidx.core.content.ContextCompat
 
 class MainActivity : ReactActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
-    SplashScreen.show(this)
-    super.onCreate(savedInstanceState)
+    super.onCreate(null)
+  }
+
+  override fun onResume() {
+    super.onResume()
   }
 
   override fun getMainComponentName(): String = "IntentFirewall"

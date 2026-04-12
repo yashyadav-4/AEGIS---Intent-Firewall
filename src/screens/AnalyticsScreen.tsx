@@ -120,12 +120,12 @@ export const AnalyticsScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#0B0C10',
     padding: 16,
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
+    fontFamily: 'SpaceGrotesk', fontWeight: 'bold',
     color: '#fff',
     marginBottom: 20,
   },
@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
   },
   statValue: {
     fontSize: 32,
-    fontWeight: 'bold',
+    fontFamily: 'SpaceGrotesk', fontWeight: 'bold',
     color: '#fff',
   },
   statValueHighlight: {
@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontFamily: 'SpaceGrotesk', fontWeight: 'bold',
     color: '#fff',
     marginBottom: 12,
   },

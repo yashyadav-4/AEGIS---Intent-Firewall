@@ -45,7 +45,7 @@ const AppNavigator = () => {
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
-          cardStyle: {backgroundColor: '#0D0D0D'},
+          cardStyle: {backgroundColor: '#0B0C10'},
         }}>
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="Warning" component={WarningScreenWrapper} />

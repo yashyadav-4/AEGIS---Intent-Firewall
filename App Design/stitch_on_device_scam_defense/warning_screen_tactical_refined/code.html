@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>INTENTFIREWALL_v2.0 // THREAT_DETECTION</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary": "#ebfeff",
+                        "tertiary": "#fff9f8",
+                        "on-error-container": "#ffdad6",
+                        "surface-tint": "#0cdbe7",
+                        "on-primary-fixed-variant": "#004f54",
+                        "surface-container-low": "#1a1b20",
+                        "surface-bright": "#38393e",
+                        "outline": "#849395",
+                        "on-secondary-fixed-variant": "#454748",
+                        "on-secondary": "#2e3132",
+                        "surface": "#121317",
+                        "tertiary-container": "#ffd4cf",
+                        "on-background": "#e3e2e8",
+                        "primary-container": "#45f3ff",
+                        "primary-fixed": "#75f5ff",
+                        "secondary": "#c5c6c7",
+                        "on-surface-variant": "#bac9ca",
+                        "on-secondary-fixed": "#1a1c1d",
+                        "on-primary-fixed": "#002022",
+                        "secondary-container": "#47494a",
+                        "on-secondary-container": "#b7b8b9",
+                        "error": "#ffb4ab",
+                        "on-primary": "#00363a",
+                        "background": "#121317",
+                        "outline-variant": "#3b494a",
+                        "surface-container-highest": "#343439",
+                        "inverse-surface": "#e3e2e8",
+                        "surface-container": "#1f1f24",
+                        "surface-dim": "#121317",
+                        "secondary-fixed": "#e2e2e3",
+                        "on-tertiary-fixed-variant": "#93000a",
+                        "on-tertiary-container": "#c60012",
+                        "on-error": "#690005",
+                        "inverse-primary": "#00696f",
+                        "surface-container-lowest": "#0d0e12",
+                        "error-container": "#93000a",
+                        "secondary-fixed-dim": "#c5c6c7",
+                        "on-tertiary-fixed": "#410002",
+                        "inverse-on-surface": "#2f3035",
+                        "on-tertiary": "#690005",
+                        "surface-variant": "#343439",
+                        "tertiary-fixed": "#ffdad6",
+                        "primary-fixed-dim": "#0cdbe7",
+                        "surface-container-high": "#292a2e",
+                        "on-surface": "#e3e2e8",
+                        "tertiary-fixed-dim": "#ffb4ab",
+                        "on-primary-container": "#006c72",
+                        "threat-red": "#FF2A2A"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0px",
+                        "lg": "0px",
+                        "xl": "0px",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Space Grotesk"],
+                        "body": ["Space Grotesk"],
+                        "label": ["Space Grotesk"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            background-color: #0B0C10;
+            background-image: 
+                linear-gradient(rgba(69, 243, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(69, 243, 255, 0.03) 1px, transparent 1px);
+            background-size: 20px 20px;
+            font-family: 'Space Grotesk', sans-serif;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .scan-line {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: rgba(255, 42, 42, 0.1);
+            z-index: 100;
+            pointer-events: none;
+        }
+        .neon-glow-red {
+            box-shadow: 0 0 15px rgba(255, 42, 42, 0.4);
+        }
+        .neon-glow-cyan {
+            box-shadow: 0 0 15px rgba(69, 243, 255, 0.3);
+        }
+        .monospaced-data {
+            font-family: 'Courier New', Courier, monospace;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="text-on-surface min-h-screen flex flex-col">
+<header class="bg-[#0B0C10] text-[#45F3FF] font-['Space_Grotesk'] uppercase tracking-[0.05em] text-lg flex justify-between items-center w-full px-6 py-4 fixed top-0 z-50">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined" data-icon="terminal">terminal</span>
+<span class="text-[#45F3FF] font-bold tracking-widest">INTENTFIREWALL_v2.0</span>
+</div>
+<div class="flex items-center gap-4">
+<span class="text-[10px] tracking-[0.2em] text-[#C5C6C7]">STATUS: ARMED</span>
+<span class="material-symbols-outlined text-[#CC2424]" data-icon="security" style="font-variation-settings: 'FILL' 1;">security</span>
+</div>
+</header>
+<main class="flex-grow pt-24 pb-12 px-6 flex flex-col items-center justify-center max-w-6xl mx-auto w-full">
+<div class="w-full grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+<section class="lg:col-span-8 flex flex-col gap-6">
+<div class="border-2 border-threat-red bg-[#1a1b20] p-8 relative overflow-hidden" style="border-color: #CC2424;">
+<div class="absolute top-0 right-0 p-2 bg-threat-red text-[#0B0C10] font-bold text-[10px] tracking-widest" style="background-color: #CC2424;">CRITICAL_ALERT</div>
+<div class="flex flex-col md:flex-row justify-between items-start gap-6">
+<div>
+<h1 class="text-5xl tracking-tighter mb-2 text-[#CC2424] font-bold">THREAT DETECTED</h1>
+<p class="text-[#C5C6C7] max-w-md uppercase text-xs tracking-widest leading-relaxed">System has intercepted a high-confidence deep-fake intent pattern attempting to bypass kernel authentication layers.</p>
+</div>
+<div class="flex flex-col items-end">
+<span class="text-[10px] font-bold uppercase tracking-[0.2em] text-[#CC2424]">Confidence Score</span>
+<div class="text-7xl font-bold monospaced-data text-[#CC2424]">92.0<span class="text-3xl">%</span></div>
+</div>
+</div>
+<div class="mt-12">
+<div class="flex items-center gap-2 mb-4">
+<div class="h-[1px] flex-grow bg-threat-red/30"></div>
+<span class="text-xs font-bold tracking-widest text-threat-red uppercase">Intercepted Payload</span>
+<div class="h-[1px] flex-grow bg-threat-red/30"></div>
+</div>
+<div class="bg-black/60 p-4 border-l-2 border-[#45F3FF] font-mono text-sm overflow-x-auto text-[#45F3FF] neon-glow-cyan">
+<code>
+                                GET /auth/bypass-v3 HTTP/1.1<br/>
+                                Host: kernel.internal.vault<br/>
+                                x-intent-token: [ENCRYPTED_CLONE_SEGMENT]<br/>
+                                payload_sig: SYNTH_CLONE_V4_88291<br/>
+                                -- system_intent: "EMERGENCY_OVERRIDE_ROOT" --
+                            </code>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="bg-surface-container-low p-6 border-l-4 border-threat-red">
+<h3 class="text-sm font-bold tracking-widest mb-4 uppercase">Authenticity Analysis</h3>
+<div class="space-y-3">
+<div class="flex justify-between items-center text-[11px]">
+<span class="text-[#C5C6C7]">CORE_ID_MATCH</span>
+<span class="font-mono text-[#CC2424]">0.02% [FAIL]</span>
+</div>
+<div class="flex justify-between items-center text-[11px]">
+<span class="text-[#C5C6C7]">SYNTH_SIGNATURE</span>
+<span class="font-mono text-[#CC2424]">SYNTH_CLONE_V4</span>
+</div>
+<div class="flex justify-between items-center text-[11px]">
+<span class="text-[#C5C6C7]">LATENCY_JITTER</span>
+<span class="text-[#45F3FF] font-mono">STABLE_HIGH</span>
+</div>
+<div class="flex justify-between items-center text-[11px]">
+<span class="text-[#C5C6C7]">VECTOR_ORIGIN</span>
+<span class="font-mono text-[#CC2424]">CRITICAL_LOSS</span>
+</div>
+</div>
+</div>
+<div class="bg-surface-container-low p-6 flex flex-col justify-between">
+<div>
+<h3 class="text-sm font-bold tracking-widest mb-2 uppercase">Risk Assessment</h3>
+<p class="text-xs text-[#C5C6C7] uppercase leading-tight">Potential for lateral movement detected across segments Alpha and Gamma. Immediate isolation recommended.</p>
+</div>
+<div class="mt-4 flex gap-1">
+<div class="h-2 flex-grow bg-threat-red" style="background-color: #CC2424;"></div>
+<div class="h-2 flex-grow bg-threat-red" style="background-color: #CC2424;"></div>
+<div class="h-2 flex-grow bg-threat-red" style="background-color: #CC2424;"></div>
+<div class="h-2 flex-grow bg-threat-red/20"></div>
+<div class="h-2 flex-grow bg-threat-red/20"></div>
+</div>
+</div>
+</div>
+</section>
+<aside class="lg:col-span-4 flex flex-col gap-4">
+<div class="bg-[#1a1b20] text-on-surface p-6 flex flex-col gap-6 border-2" style="border-color: #CC2424;">
+<div class="flex items-start gap-4">
+<span class="material-symbols-outlined text-4xl text-[#CC2424]" data-icon="block">block</span>
+<h2 class="text-2xl font-black uppercase leading-tight">Response Required</h2>
+</div>
+<p class="text-xs font-bold leading-relaxed uppercase opacity-80">The firewall has pre-emptively throttled the connection. User input required to finalize purge.</p>
+<button class="bg-[#CC2424] text-[#0B0C10] py-4 font-bold tracking-[0.2em] uppercase hover:bg-red-700 transition-all">
+                        BLOCK ACCESS SEGMENT
+                    </button>
+</div>
+<div class="bg-surface-container-low p-6 border border-outline/20">
+<h3 class="text-xs font-bold tracking-widest mb-6 text-[#C5C6C7] uppercase">Secondary Protocols</h3>
+<div class="flex flex-col gap-3">
+<button class="w-full py-3 border border-outline text-[#C5C6C7] text-xs font-bold tracking-widest hover:bg-[#45F3FF]/10 hover:text-[#45F3FF] hover:border-[#45F3FF] transition-all uppercase flex justify-between px-4 items-center">
+                            VERIFY CONTACT
+                            <span class="material-symbols-outlined text-sm" data-icon="person_search">person_search</span>
+</button>
+<button class="w-full py-3 border border-outline text-xs font-bold tracking-widest hover:bg-threat-red/10 transition-all uppercase flex justify-between px-4 items-center text-[#CC2424]">
+                            OVERRIDE ALERT
+                            <span class="material-symbols-outlined text-sm" data-icon="warning">warning</span>
+</button>
+</div>
+</div>
+<div class="p-4 border border-threat-red/20 opacity-50">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-xs text-[#CC2424]" data-icon="info">info</span>
+<span class="text-[9px] font-bold tracking-widest uppercase">System Metadata</span>
+</div>
+<div class="text-[9px] font-mono text-[#C5C6C7] space-y-1">
+<div>NOD_ID: FW-77-992-0X</div>
+<div>KERNEL: 5.15.0-SECURITY-ENHANCED</div>
+<div>UPTIME: 1293:11:02</div>
+</div>
+</div>
+</aside>
+</div>
+</main>
+<footer class="bg-[#0B0C10] flex justify-around items-stretch fixed bottom-0 left-0 w-full z-50">
+<div class="flex flex-col items-center justify-center text-[#C5C6C7] py-3 px-2 flex-1 hover:bg-[#45F3FF]/5 transition-colors">
+<span class="material-symbols-outlined mb-1" data-icon="radar">radar</span>
+<span class="font-['Space_Grotesk'] uppercase tracking-[0.1em] text-[10px]">SCAN</span>
+</div>
+<div class="flex flex-col items-center justify-center text-[#C5C6C7] py-3 px-2 flex-1 hover:bg-[#45F3FF]/5 transition-colors">
+<span class="material-symbols-outlined mb-1" data-icon="receipt_long">receipt_long</span>
+<span class="font-['Space_Grotesk'] uppercase tracking-[0.1em] text-[10px]">HISTORY</span>
+</div>
+<div class="flex flex-col items-center justify-center border-l-4 border-[#45F3FF] bg-[#1a1b20] text-[#45F3FF] py-3 px-2 flex-1">
+<span class="material-symbols-outlined mb-1" data-icon="lock_open" style="font-variation-settings: 'FILL' 1;">lock_open</span>
+<span class="font-['Space_Grotesk'] uppercase tracking-[0.1em] text-[10px]">VAULT</span>
+</div>
+<div class="flex flex-col items-center justify-center text-[#C5C6C7] py-3 px-2 flex-1 hover:bg-[#45F3FF]/5 transition-colors">
+<span class="material-symbols-outlined mb-1" data-icon="settings_input_component">settings_input_component</span>
+<span class="font-['Space_Grotesk'] uppercase tracking-[0.1em] text-[10px]">SETTINGS</span>
+</div>
+</footer>
+<div class="scan-line" style="background: rgba(204, 36, 36, 0.1);"></div>
+</body></html>

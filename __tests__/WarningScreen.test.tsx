@@ -8,10 +8,6 @@ jest.mock('@react-navigation/native', () => ({
   useRoute: () => ({ params: {} }),
 }));
 
-jest.mock('react-native-splash-screen', () => ({
-  __esModule: true,
-  default: { hide: jest.fn(), show: jest.fn() }
-}));
 
 test('WarningScreen displays threat info', () => {
   const mockProps = {
@@ -20,6 +16,7 @@ test('WarningScreen displays threat info', () => {
     message: 'Your OTP is 123456',
     onBlock: jest.fn(),
     onDismiss: jest.fn(),
+    onCallHelp: jest.fn(),
   };
 
   const { getByText, getAllByText } = render(<WarningScreen {...mockProps} />);

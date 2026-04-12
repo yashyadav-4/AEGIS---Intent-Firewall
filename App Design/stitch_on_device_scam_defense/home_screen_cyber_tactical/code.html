@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>INTENTFIREWALL | Tactical Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "primary": "#ebfeff",
+                    "tertiary": "#fff9f8",
+                    "on-error-container": "#ffdad6",
+                    "surface-tint": "#0cdbe7",
+                    "on-primary-fixed-variant": "#004f54",
+                    "surface-container-low": "#1a1b20",
+                    "surface-bright": "#38393e",
+                    "outline": "#849395",
+                    "on-secondary-fixed-variant": "#454748",
+                    "on-secondary": "#2e3132",
+                    "surface": "#121317",
+                    "tertiary-container": "#ffd4cf",
+                    "on-background": "#e3e2e8",
+                    "primary-container": "#45f3ff",
+                    "primary-fixed": "#75f5ff",
+                    "secondary": "#c5c6c7",
+                    "on-surface-variant": "#bac9ca",
+                    "on-secondary-fixed": "#1a1c1d",
+                    "on-primary-fixed": "#002022",
+                    "secondary-container": "#47494a",
+                    "on-secondary-container": "#b7b8b9",
+                    "error": "#ffb4ab",
+                    "on-primary": "#00363a",
+                    "background": "#121317",
+                    "outline-variant": "#3b494a",
+                    "surface-container-highest": "#343439",
+                    "inverse-surface": "#e3e2e8",
+                    "surface-container": "#1f1f24",
+                    "surface-dim": "#121317",
+                    "secondary-fixed": "#e2e2e3",
+                    "on-tertiary-fixed-variant": "#93000a",
+                    "on-tertiary-container": "#c60012",
+                    "on-error": "#690005",
+                    "inverse-primary": "#00696f",
+                    "surface-container-lowest": "#0d0e12",
+                    "error-container": "#93000a",
+                    "secondary-fixed-dim": "#c5c6c7",
+                    "on-tertiary-fixed": "#410002",
+                    "inverse-on-surface": "#2f3035",
+                    "on-tertiary": "#690005",
+                    "surface-variant": "#343439",
+                    "tertiary-fixed": "#ffdad6",
+                    "primary-fixed-dim": "#0cdbe7",
+                    "surface-container-high": "#292a2e",
+                    "on-surface": "#e3e2e8",
+                    "tertiary-fixed-dim": "#ffb4ab",
+                    "on-primary-container": "#006c72"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0px",
+                    "lg": "0px",
+                    "xl": "0px",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Space Grotesk"],
+                    "body": ["Space Grotesk"],
+                    "label": ["Space Grotesk"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body {
+            background-color: #0B0C10;
+            background-image: 
+                linear-gradient(rgba(69, 243, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(69, 243, 255, 0.03) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .scan-line {
+            height: 2px;
+            background: rgba(69, 243, 255, 0.1);
+            position: absolute;
+            width: 100%;
+            z-index: 10;
+            pointer-events: none;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-body text-on-surface min-h-screen flex flex-col">
+<!-- TopAppBar -->
+<header class="bg-[#0B0C10] text-[#45F3FF] font-['Space_Grotesk'] uppercase tracking-[0.05em] text-lg flex justify-between items-center w-full px-6 py-4 fixed top-0 z-50">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[#45F3FF]" data-icon="terminal">terminal</span>
+<span class="text-[#45F3FF] font-bold tracking-widest">INTENTFIREWALL_v2.0</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="hover:bg-[#45F3FF]/10 p-2 transition-colors duration-100 ease-linear">
+<span class="material-symbols-outlined" data-icon="security">security</span>
+</button>
+</div>
+</header>
+<main class="flex-grow pt-20 pb-24 px-4 md:px-8 max-w-7xl mx-auto w-full">
+<!-- System Status Section (Asymmetric Hero) -->
+<section class="grid grid-cols-1 md:grid-cols-12 gap-6 mb-8">
+<div class="md:col-span-8 bg-surface-container-low p-6 relative overflow-hidden">
+<div class="flex justify-between items-start mb-12">
+<div>
+<p class="text-[10px] uppercase tracking-[0.2em] text-outline mb-1">System Entropy</p>
+<h1 class="text-5xl font-bold text-primary-container tracking-tighter">VIGILANT</h1>
+</div>
+<div class="flex items-center gap-2 px-3 py-1 bg-primary-container/10 border border-primary-container/20">
+<span class="relative flex h-2 w-2">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-container opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2 w-2 bg-primary-container"></span>
+</span>
+<span class="text-[10px] font-bold text-primary-container tracking-[0.1em]">LIVE PROTECTION</span>
+</div>
+</div>
+<div class="flex flex-wrap gap-12">
+<div>
+<p class="text-[10px] uppercase tracking-[0.1em] text-outline">UPTIME</p>
+<p class="font-mono text-xl text-primary-container">342:12:09:44</p>
+</div>
+<div>
+<p class="text-[10px] uppercase tracking-[0.1em] text-outline">THREATS NULLIFIED</p>
+<p class="font-mono text-xl text-primary-container">1,284</p>
+</div>
+<div>
+<p class="text-[10px] uppercase tracking-[0.1em] text-outline">INTENT COVERAGE</p>
+<p class="font-mono text-xl text-primary-container">99.9%</p>
+</div>
+</div>
+</div>
+<div class="md:col-span-4 bg-surface-container-high p-6 flex flex-col justify-between border-l-4 border-primary-container">
+<h3 class="text-xs uppercase tracking-[0.2em] text-outline mb-4">QUICK_PROTECTION</h3>
+<div class="space-y-6">
+<div class="flex justify-between items-center">
+<span class="text-sm font-medium tracking-wide">SMS FILTER</span>
+<button class="w-12 h-6 bg-primary-container flex items-center px-1">
+<div class="w-4 h-4 bg-on-primary"></div>
+</button>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-sm font-medium tracking-wide">CALL SHIELD</span>
+<button class="w-12 h-6 bg-primary-container flex items-center px-1">
+<div class="w-4 h-4 bg-on-primary"></div>
+</button>
+</div>
+<div class="flex justify-between items-center opacity-50">
+<span class="text-sm font-medium tracking-wide">DATA TUNNEL</span>
+<button class="w-12 h-6 bg-surface-container-highest flex items-center justify-end px-1">
+<div class="w-4 h-4 bg-outline"></div>
+</button>
+</div>
+</div>
+<div class="mt-8 pt-4 border-t border-outline-variant/30">
+<p class="text-[10px] leading-relaxed text-outline/70">
+                        ALL SUB-SYSTEMS NOMINAL. ENCRYPTION KEYS ROTATED 4M AGO.
+                    </p>
+</div>
+</div>
+</section>
+<!-- Threat Log & Network Map (Bento Grid) -->
+<section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+<!-- Technical Log -->
+<div class="lg:col-span-2 bg-surface-container-low p-0 flex flex-col">
+<div class="px-6 py-4 bg-surface-container-high flex justify-between items-center">
+<h2 class="text-xs uppercase tracking-[0.2em] font-bold">RECENT_THREATS_LOG</h2>
+<span class="text-[10px] font-mono text-outline">v2.0.4-STABLE</span>
+</div>
+<div class="p-6 font-mono text-[11px] leading-6 space-y-2 overflow-y-auto max-h-[400px]">
+<div class="flex gap-4 text-error border-b border-error/10 pb-2">
+<span class="font-bold whitespace-nowrap">[!] CRITICAL</span>
+<span class="text-outline/50">14:02:11</span>
+<span class="flex-grow">PHISHING_ATTEMPT_V8 :: SOURCE_IP: 192.168.4.12 :: BLOCKED</span>
+</div>
+<div class="flex gap-4 text-primary-container/80 border-b border-primary-container/10 pb-2">
+<span class="font-bold whitespace-nowrap">[i] INFO</span>
+<span class="text-outline/50">13:58:45</span>
+<span class="flex-grow">SYSTEM_SCAN_COMPLETE :: 0 THREATS FOUND</span>
+</div>
+<div class="flex gap-4 text-primary-container/80 border-b border-primary-container/10 pb-2">
+<span class="font-bold whitespace-nowrap">[i] INFO</span>
+<span class="text-outline/50">13:42:01</span>
+<span class="flex-grow">SMS_PACKET_INTERCEPTED :: CLEAN_INTENT</span>
+</div>
+<div class="flex gap-4 text-error border-b border-error/10 pb-2">
+<span class="font-bold whitespace-nowrap">[!] WARNING</span>
+<span class="text-outline/50">13:30:12</span>
+<span class="flex-grow">UNAUTHORIZED_ACCESS_LOCKOUT :: PK_4922</span>
+</div>
+<div class="flex gap-4 text-primary-container/80 border-b border-primary-container/10 pb-2">
+<span class="font-bold whitespace-nowrap">[i] INFO</span>
+<span class="text-outline/50">12:11:55</span>
+<span class="flex-grow">DB_ENCRYPTION_RESYNC :: SUCCESS</span>
+</div>
+<div class="flex gap-4 text-primary-container/80 border-b border-primary-container/10 pb-2">
+<span class="font-bold whitespace-nowrap">[i] INFO</span>
+<span class="text-outline/50">12:05:33</span>
+<span class="flex-grow">AUTO_UPDATE_DAEMON_INITIALIZED</span>
+</div>
+<div class="flex gap-4 text-primary-container/80 border-b border-primary-container/10 pb-2">
+<span class="font-bold whitespace-nowrap">[i] INFO</span>
+<span class="text-outline/50">11:59:02</span>
+<span class="flex-grow">USER_LOGIN_TOKEN_RENEWED</span>
+</div>
+</div>
+</div>
+<!-- Action Area / Map Visual -->
+<div class="bg-surface-container-low flex flex-col">
+<div class="aspect-square relative bg-surface-container-highest/20 overflow-hidden">
+<img alt="Abstract digital world map with neon glowing data points and matrix grid overlays" class="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-screen" data-alt="Technical digital map with glowing cyan circuit lines and data nodes on a dark obsidian background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCmXAEtgJ6Lax9WWWiv319jp46vXpiZ4mFXEidRemGmLDaB-IhLiKFpdLF1EXDr_o7bn6iAh4TpNkclRS6nFkUXzulLCeoihSpjVh2vmJ2YvvQEyklaWI3SJeTqltsYX0LRv5nkRmbhauBsKn0hXz6ClgP8_qmEDDfspAY-D9dMTeIbttF45Li6VNRKoEeNuc-kbM5zDUnBjckFuOunXYlieSVnkexpKpkFWlEBiLdi76V_FFfHXSvXn9h649pJV7Jobt_PvQ_zLP5Z"/>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-low via-transparent to-transparent"></div>
+<div class="absolute top-4 left-4">
+<div class="flex items-center gap-2 bg-on-surface/5 backdrop-blur-md p-2 border border-outline-variant/30">
+<span class="material-symbols-outlined text-primary-container text-sm" data-icon="my_location">my_location</span>
+<span class="text-[10px] tracking-widest font-mono">NODE_77_ALPHA</span>
+</div>
+</div>
+</div>
+<div class="p-6 flex-grow flex flex-col justify-end gap-6">
+<div>
+<h4 class="text-[10px] uppercase tracking-[0.2em] text-outline mb-2">Simulate Environment</h4>
+<p class="text-sm text-outline-variant leading-relaxed">Execute a controlled penetration test to verify current firewall integrity and intent-parsing rules.</p>
+</div>
+<button class="w-full py-4 bg-primary-container text-on-primary font-bold uppercase tracking-[0.2em] text-sm hover:ring-2 hover:ring-primary-container hover:ring-offset-2 hover:ring-offset-surface-dim transition-all">
+                        Simulate Attack
+                    </button>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-stretch bg-[#0B0C10] md:hidden">
+<a class="flex flex-col items-center justify-center border-l-4 border-[#45F3FF] bg-[#1a1b20] text-[#45F3FF] py-3 px-2 flex-1" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="radar">radar</span>
+<span class="font-['Space_Grotesk'] uppercase tracking-[0.1em] text-[10px]">SCAN</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#C5C6C7] py-3 px-2 flex-1 hover:bg-[#45F3FF]/5" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="receipt_long">receipt_long</span>
+<span class="font-['Space_Grotesk'] uppercase tracking-[0.1em] text-[10px]">HISTORY</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#C5C6C7] py-3 px-2 flex-1 hover:bg-[#45F3FF]/5" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="lock_open">lock_open</span>
+<span class="font-['Space_Grotesk'] uppercase tracking-[0.1em] text-[10px]">VAULT</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#C5C6C7] py-3 px-2 flex-1 hover:bg-[#45F3FF]/5" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="settings_input_component">settings_input_component</span>
+<span class="font-['Space_Grotesk'] uppercase tracking-[0.1em] text-[10px]">SETTINGS</span>
+</a>
+</nav>
+<!-- Desktop Sidebar/Nav (Hidden on mobile) -->
+<aside class="hidden md:flex fixed right-0 top-1/2 -translate-y-1/2 flex-col gap-1 z-50 pr-4">
+<div class="h-10 w-1 bg-primary-container mb-4"></div>
+<div class="flex flex-col gap-6 items-end">
+<div class="group relative flex items-center gap-4">
+<span class="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] tracking-[0.3em] font-bold text-primary-container uppercase">Radar</span>
+<span class="material-symbols-outlined p-2 bg-surface-container-high border-l-2 border-primary-container text-primary-container" data-icon="radar">radar</span>
+</div>
+<div class="group relative flex items-center gap-4">
+<span class="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] tracking-[0.3em] font-bold text-outline uppercase">Vault</span>
+<span class="material-symbols-outlined p-2 hover:bg-surface-container-high transition-colors text-outline" data-icon="lock_open">lock_open</span>
+</div>
+<div class="group relative flex items-center gap-4">
+<span class="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] tracking-[0.3em] font-bold text-outline uppercase">Logs</span>
+<span class="material-symbols-outlined p-2 hover:bg-surface-container-high transition-colors text-outline" data-icon="receipt_long">receipt_long</span>
+</div>
+<div class="group relative flex items-center gap-4">
+<span class="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] tracking-[0.3em] font-bold text-outline uppercase">Terminal</span>
+<span class="material-symbols-outlined p-2 hover:bg-surface-container-high transition-colors text-outline" data-icon="settings_input_component">settings_input_component</span>
+</div>
+</div>
+</aside>
+</body></html>

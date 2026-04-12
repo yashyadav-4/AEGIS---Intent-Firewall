@@ -2,7 +2,6 @@ import React, { useEffect } from 'react';
 import { DeviceEventEmitter } from 'react-native';
 import AppNavigator from './src/navigation/AppNavigator';
 import ErrorBoundary from './src/utils/errorBoundary';
-import SplashScreen from 'react-native-splash-screen';
 import { saveMessageEvent } from './src/utils/storage';
 
 const APP_ICONS: Record<string, string> = {
@@ -15,10 +14,6 @@ const APP_ICONS: Record<string, string> = {
 
 const App = () => {
   useEffect(() => {
-    setTimeout(() => {
-      SplashScreen.hide();
-    }, 1000);
-
     const subscription = DeviceEventEmitter.addListener('onNotification', async data => {
       await saveMessageEvent({
         app: data.appName,

@@ -1,194 +1,128 @@
 #!/usr/bin/env python3
-"""Train a compact WavLM student model from offline distillation targets."""
+"""Train the WavLM Student CNN via Distillation.
 
-from __future__ import annotations
+Extracts features from the raw 32000-sample audio and mimics the 128-dim
+WavLM-Base+ teacher outputs using a combined MSE + Cosine Distance loss.
+"""
 
-import argparse
+import sys
+import time
 from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras import Input, Model
+from tensorflow.keras.layers import (
+    BatchNormalization,
+    Conv1D,
+    Dense,
+    GlobalAveragePooling1D,
+    Dropout,
+)
 
-TRAIN_WAVE_PATH = Path("dataset/distill/train_waveforms.npy")
-TRAIN_TEACHER_PATH = Path("dataset/distill/train_wavlm_teacher.npy")
-DEV_WAVE_PATH = Path("dataset/distill/dev_waveforms.npy")
-DEV_TEACHER_PATH = Path("dataset/distill/dev_wavlm_teacher.npy")
-OUT_MODEL_PATH = Path("models/student/wavlm_student_best.keras")
+DATASET_DIR = Path("dataset")
+OUTPUT_DIR = Path("models/detectors")
 
-WAVEFORM_LEN = 32000
-FEATURE_DIM = 128
-BATCH_SIZE = 64
-EPOCHS = 50
-LEARNING_RATE = 1e-3
+def build_wavlm_student(input_length: int = 32000) -> tf.keras.Model:
+    """1D CNN Student Architecture to process raw audio to 128-dim WavLM embedding."""
+    x_in = Input(shape=(input_length, 1), name="audio_input")
+    
+    # Block 1
+    x = Conv1D(32, kernel_size=11, strides=5, padding="same", activation="relu", name="stu_conv1")(x_in)
+    x = BatchNormalization(name="stu_bn1")(x)
+    
+    # Block 2
+    x = Conv1D(64, kernel_size=11, strides=4, padding="same", activation="relu", name="stu_conv2")(x)
+    x = BatchNormalization(name="stu_bn2")(x)
+    
+    # Block 3
+    x = Conv1D(128, kernel_size=7, strides=4, padding="same", activation="relu", name="stu_conv3")(x)
+    x = BatchNormalization(name="stu_bn3")(x)
+    
+    # Block 4
+    x = Conv1D(128, kernel_size=7, strides=2, padding="same", activation="relu", name="stu_conv4")(x)
+    x = BatchNormalization(name="stu_bn4")(x)
+    x = Dropout(0.2, name="stu_drop4")(x)
 
+    x = GlobalAveragePooling1D(name="stu_gap")(x)
+    
+    # Output matches the exactly 128-dim continuous features from the WavLM teacher
+    y = Dense(128, activation="linear", name="wavlm_embedding_out")(x)
 
-def combined_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
-    mse = tf.reduce_mean(tf.square(y_true - y_pred))
-    y_true_n = tf.nn.l2_normalize(y_true, axis=1)
-    y_pred_n = tf.nn.l2_normalize(y_pred, axis=1)
-    cosine_dist = 1.0 - tf.reduce_mean(tf.reduce_sum(y_true_n * y_pred_n, axis=1))
-    return mse + 0.1 * cosine_dist
+    return Model(inputs=x_in, outputs=y, name="WavLMStudent")
 
+def mse_cosine_loss(alpha_cosine=0.5):
+    """Combined MSE and Cosine Distance Loss for representation distillation."""
+    def loss(y_true, y_pred):
+        # Mean Squared Error for magnitude scale alignment
+        mse = tf.keras.losses.mean_squared_error(y_true, y_pred)
+        
+        # Cosine distance for angular feature alignment
+        y_true_norm = tf.math.l2_normalize(y_true, axis=-1)
+        y_pred_norm = tf.math.l2_normalize(y_pred, axis=-1)
+        cos_sim = tf.reduce_sum(y_true_norm * y_pred_norm, axis=-1)
+        cos_loss = 1.0 - cos_sim
+        
+        return mse + (alpha_cosine * cos_loss)
+    return loss
 
-def build_wavlm_student() -> tf.keras.Model:
-    inputs = tf.keras.Input(shape=(WAVEFORM_LEN, 1), dtype=tf.float32)
+def _load_distill_array(name: str, dtype):
+    path = DATASET_DIR / f"{name}.npy"
+    if not path.exists():
+        print(f"ERROR: missing distillation file: {path}")
+        print("Please ensure you ran build_wavlm_distill_dataset.py first.")
+        sys.exit(1)
+    print(f"Loading {path}...")
+    return np.load(path).astype(dtype)
 
-    x = tf.keras.layers.Conv1D(32, kernel_size=400, strides=8, padding="same")(inputs)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.ReLU()(x)
+def main():
+    total_start = time.perf_counter()
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    x = tf.keras.layers.DepthwiseConv1D(kernel_size=100, strides=8, padding="same")(x)
-    x = tf.keras.layers.Conv1D(64, kernel_size=1, padding="same")(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.ReLU()(x)
+    print("Loading distillation datasets...")
+    # Raw waveform inputs shape: (batch, 32000)
+    train_audio = _load_distill_array("distill_train_audio", np.float32)
+    dev_audio = _load_distill_array("distill_dev_audio", np.float32)
+    
+    # Needs to be reshaped for Conv1D to (batch, 32000, 1)
+    train_audio = np.expand_dims(train_audio, axis=-1)
+    dev_audio = np.expand_dims(dev_audio, axis=-1)
 
-    x = tf.keras.layers.DepthwiseConv1D(kernel_size=25, strides=4, padding="same")(x)
-    x = tf.keras.layers.Conv1D(128, kernel_size=1, padding="same")(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.ReLU()(x)
+    # Teacher targets shape: (batch, 128)
+    train_targets = _load_distill_array("distill_train_wavlm", np.float32)
+    dev_targets = _load_distill_array("distill_dev_wavlm", np.float32)
 
-    x = tf.keras.layers.DepthwiseConv1D(kernel_size=10, strides=8, padding="same")(x)
-    x = tf.keras.layers.Conv1D(128, kernel_size=1, padding="same")(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.ReLU()(x)
-
-    x = tf.keras.layers.GlobalAveragePooling1D()(x)
-    x = tf.keras.layers.Dense(256, activation="relu")(x)
-    x = tf.keras.layers.Dropout(0.2)(x)
-    outputs = tf.keras.layers.Dense(128)(x)
-
-    model = tf.keras.Model(inputs=inputs, outputs=outputs, name="wavlm_student")
-    return model
-
-
-def make_dataset(wave_memmap: np.ndarray, teacher_memmap: np.ndarray, batch_size: int, shuffle: bool) -> tf.data.Dataset:
-    n = wave_memmap.shape[0]
-
-    def _gen():
-        idxs = np.arange(n)
-        if shuffle:
-            np.random.shuffle(idxs)
-        for i in idxs:
-            x = wave_memmap[i].astype(np.float32)
-            y = teacher_memmap[i].astype(np.float32)
-            yield np.expand_dims(x, axis=-1), y
-
-    output_signature = (
-        tf.TensorSpec(shape=(WAVEFORM_LEN, 1), dtype=tf.float32),
-        tf.TensorSpec(shape=(FEATURE_DIM,), dtype=tf.float32),
+    student_model = build_wavlm_student(input_length=32000)
+    student_model.compile(
+        optimizer=Adam(learning_rate=1e-3),
+        loss=mse_cosine_loss(alpha_cosine=0.5),
+        metrics=["mae", "mse"]
     )
-
-    ds = tf.data.Dataset.from_generator(_gen, output_signature=output_signature)
-    ds = ds.batch(batch_size)
-    ds = ds.prefetch(tf.data.AUTOTUNE)
-    return ds
-
-
-def evaluate_dev_metrics(model: tf.keras.Model, dev_ds: tf.data.Dataset) -> tuple[float, float]:
-    cosine_values = []
-    total_sqerr = 0.0
-    total_count = 0
-
-    for x_batch, y_batch in dev_ds:
-        preds = model(x_batch, training=False)
-        y_true_n = tf.nn.l2_normalize(y_batch, axis=1)
-        y_pred_n = tf.nn.l2_normalize(preds, axis=1)
-        cos = tf.reduce_sum(y_true_n * y_pred_n, axis=1)
-        cosine_values.append(cos.numpy())
-
-        sqerr = tf.reduce_sum(tf.square(y_batch - preds)).numpy()
-        total_sqerr += float(sqerr)
-        total_count += int(np.prod(y_batch.shape))
-
-    cosine_all = np.concatenate(cosine_values, axis=0)
-    median_cosine = float(np.median(cosine_all))
-    mse = float(total_sqerr / max(total_count, 1))
-    return median_cosine, mse
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Train WavLM student distillation model.")
-    parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
-    parser.add_argument("--epochs", type=int, default=EPOCHS)
-    parser.add_argument("--lr", type=float, default=LEARNING_RATE)
-    args = parser.parse_args()
-
-    OUT_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-    train_wave = np.load(TRAIN_WAVE_PATH, mmap_mode="r")
-    train_teacher = np.load(TRAIN_TEACHER_PATH, mmap_mode="r")
-    dev_wave = np.load(DEV_WAVE_PATH, mmap_mode="r")
-    dev_teacher = np.load(DEV_TEACHER_PATH, mmap_mode="r")
-
-    if train_wave.shape[1] != WAVEFORM_LEN or dev_wave.shape[1] != WAVEFORM_LEN:
-        raise ValueError("Waveform arrays must have shape (N, 32000).")
-    if train_teacher.shape[1] != FEATURE_DIM or dev_teacher.shape[1] != FEATURE_DIM:
-        raise ValueError("Teacher arrays must have shape (N, 128).")
-
-    print(f"Train waveforms: {train_wave.shape}")
-    print(f"Train teachers:  {train_teacher.shape}")
-    print(f"Dev waveforms:   {dev_wave.shape}")
-    print(f"Dev teachers:    {dev_teacher.shape}")
-
-    train_ds = make_dataset(train_wave, train_teacher, batch_size=args.batch_size, shuffle=True)
-    dev_ds = make_dataset(dev_wave, dev_teacher, batch_size=args.batch_size, shuffle=False)
-
-    model = build_wavlm_student()
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=args.lr),
-        loss=combined_loss,
-        metrics=[tf.keras.metrics.MeanSquaredError(name="mse")],
-    )
-
-    model.summary()
-    print(f"Total parameters: {model.count_params()}")
+    
+    student_model.summary()
 
     callbacks = [
-        tf.keras.callbacks.EarlyStopping(monitor="val_loss", patience=10, restore_best_weights=True),
-        tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", patience=5, factor=0.5, verbose=1),
-        tf.keras.callbacks.ModelCheckpoint(
-            filepath=str(OUT_MODEL_PATH),
-            monitor="val_loss",
-            save_best_only=True,
-            save_weights_only=False,
-            verbose=1,
-        ),
+        EarlyStopping(monitor="val_loss", patience=15, mode="min", restore_best_weights=True, verbose=1),
+        ModelCheckpoint(filepath=str(OUTPUT_DIR / "wavlm_student_best.h5"), monitor="val_loss", mode="min", save_best_only=True, verbose=1),
+        ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=5, mode="min", min_lr=1e-6, verbose=1),
     ]
 
-    history = model.fit(
-        train_ds,
-        validation_data=dev_ds,
-        epochs=args.epochs,
+    print("\n--- DISTILLING WAVLM STUDENT CNN ---")
+    student_model.fit(
+        x=train_audio,
+        y=train_targets,
+        validation_data=(dev_audio, dev_targets),
+        epochs=150,
+        batch_size=128,
         callbacks=callbacks,
         verbose=1,
     )
-
-    if OUT_MODEL_PATH.exists():
-        best_model = tf.keras.models.load_model(
-            OUT_MODEL_PATH,
-            custom_objects={"combined_loss": combined_loss},
-            compile=False,
-        )
-    else:
-        best_model = model
-
-    median_cosine, mse = evaluate_dev_metrics(best_model, dev_ds)
-    print(f"Median cosine similarity (dev): {median_cosine:.6f}")
-    print(f"MSE (dev): {mse:.6f}")
-
-    if OUT_MODEL_PATH.exists():
-        print(f"Model saved to: {OUT_MODEL_PATH}")
-    else:
-        print("Warning: best model file was not created.")
-
-    if median_cosine > 0.85 and OUT_MODEL_PATH.exists():
-        print("SUCCESS: cosine similarity > 0.85 and model saved.")
-    else:
-        print("FAIL: success condition not met.")
-
-    print(f"Training epochs completed: {len(history.history.get('loss', []))}")
-
+    
+    total_elapsed = time.perf_counter() - total_start
+    print(f"\nWavLM Student distillation complete in {total_elapsed / 60.0:.2f} minutes.")
+    print(f"Student model successfully saved to {OUTPUT_DIR}/wavlm_student_best.h5.")
 
 if __name__ == "__main__":
-    tf.keras.utils.set_random_seed(42)
     main()

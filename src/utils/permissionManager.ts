@@ -57,6 +57,27 @@ export async function checkCallScreeningPermission(): Promise<boolean> {
   return false;
 }
 
+export async function checkDefaultCallingAppPermission(): Promise<boolean> {
+  if (Platform.OS === 'android' && NotificationService.checkDefaultCallingAppPermission) {
+    try {
+      return await NotificationService.checkDefaultCallingAppPermission();
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+export async function requestDefaultCallingAppPermission(): Promise<void> {
+  if (Platform.OS === 'android' && NotificationService.requestDefaultCallingAppPermission) {
+    try {
+      await NotificationService.requestDefaultCallingAppPermission();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+}
+
 export async function requestCallScreeningPermission(): Promise<void> {
   if (Platform.OS === 'android' && NotificationService.requestCallScreeningPermission) {
     try {
@@ -119,6 +140,7 @@ export interface PermissionStatus {
   notification: boolean;
   notificationListener: boolean;
   callScreening: boolean;
+  defaultCallingApp: boolean;
   audioRecording: boolean;
   sms: boolean;
 }
@@ -127,10 +149,11 @@ export async function getAllPermissionStatus(): Promise<PermissionStatus> {
   const notification = await checkNotificationPermission();
   const notificationListener = await checkNotificationListenerEnabled();
   const callScreening = await checkCallScreeningPermission();
+  const defaultCallingApp = await checkDefaultCallingAppPermission();
   const audioRecording = await checkAudioRecordingPermission();
   const sms = await checkSmsPermission();
   
-  return { notification, notificationListener, callScreening, audioRecording, sms };
+  return { notification, notificationListener, callScreening, defaultCallingApp, audioRecording, sms };
 }
 
 export async function requestAllRequiredPermissions(): Promise<PermissionStatus> {
@@ -149,6 +172,7 @@ export async function requestAllRequiredPermissions(): Promise<PermissionStatus>
     await PermissionsAndroid.requestMultiple(permissionsToRequest);
   }
 
+  await requestDefaultCallingAppPermission();
   await requestCallScreeningPermission();
   
   return await getAllPermissionStatus();

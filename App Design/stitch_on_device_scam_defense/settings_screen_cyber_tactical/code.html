@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+                  "primary": "#ebfeff",
+                  "tertiary": "#fff9f8",
+                  "on-error-container": "#ffdad6",
+                  "surface-tint": "#0cdbe7",
+                  "on-primary-fixed-variant": "#004f54",
+                  "surface-container-low": "#1a1b20",
+                  "surface-bright": "#38393e",
+                  "outline": "#849395",
+                  "on-secondary-fixed-variant": "#454748",
+                  "on-secondary": "#2e3132",
+                  "surface": "#121317",
+                  "tertiary-container": "#ffd4cf",
+                  "on-background": "#e3e2e8",
+                  "primary-container": "#45f3ff",
+                  "primary-fixed": "#75f5ff",
+                  "secondary": "#c5c6c7",
+                  "on-surface-variant": "#bac9ca",
+                  "on-secondary-fixed": "#1a1c1d",
+                  "on-primary-fixed": "#002022",
+                  "secondary-container": "#47494a",
+                  "on-secondary-container": "#b7b8b9",
+                  "error": "#ffb4ab",
+                  "on-primary": "#00363a",
+                  "background": "#121317",
+                  "outline-variant": "#3b494a",
+                  "surface-container-highest": "#343439",
+                  "inverse-surface": "#e3e2e8",
+                  "surface-container": "#1f1f24",
+                  "surface-dim": "#121317",
+                  "secondary-fixed": "#e2e2e3",
+                  "on-tertiary-fixed-variant": "#93000a",
+                  "on-tertiary-container": "#c60012",
+                  "on-error": "#690005",
+                  "inverse-primary": "#00696f",
+                  "surface-container-lowest": "#0d0e12",
+                  "error-container": "#93000a",
+                  "secondary-fixed-dim": "#c5c6c7",
+                  "on-tertiary-fixed": "#410002",
+                  "inverse-on-surface": "#2f3035",
+                  "on-tertiary": "#690005",
+                  "surface-variant": "#343439",
+                  "tertiary-fixed": "#ffdad6",
+                  "primary-fixed-dim": "#0cdbe7",
+                  "surface-container-high": "#292a2e",
+                  "on-surface": "#e3e2e8",
+                  "tertiary-fixed-dim": "#ffb4ab",
+                  "on-primary-container": "#006c72"
+          },
+          "borderRadius": {
+                  "DEFAULT": "0px",
+                  "lg": "0px",
+                  "xl": "0px",
+                  "full": "9999px"
+          },
+          "fontFamily": {
+                  "headline": ["Space Grotesk"],
+                  "body": ["Space Grotesk"],
+                  "label": ["Space Grotesk"]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    body {
+      background-color: #0B0C10;
+      background-image: 
+        linear-gradient(rgba(69, 243, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(69, 243, 255, 0.03) 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .glitch-hover:hover {
+      text-shadow: 2px 0 #FF2A2A, -2px 0 #45F3FF;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-body text-on-background selection:bg-primary-container selection:text-on-primary">
+<!-- TopAppBar -->
+<header class="bg-[#0B0C10] text-[#45F3FF] font-['Space_Grotesk'] uppercase tracking-[0.05em] text-lg docked full-width top-0 border-b-0 flex justify-between items-center w-full px-6 py-4 fixed z-50">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[#45F3FF]" data-icon="terminal">terminal</span>
+<span class="text-[#45F3FF] font-bold tracking-widest">INTENTFIREWALL_v2.0</span>
+</div>
+<div class="flex items-center gap-4">
+<span class="text-[10px] text-secondary tracking-widest hidden md:block">SEC_STATUS: ACTIVE</span>
+<span class="material-symbols-outlined text-[#45F3FF]" data-icon="security">security</span>
+</div>
+</header>
+<main class="pt-24 pb-32 px-6 max-w-4xl mx-auto">
+<!-- Path Header -->
+<div class="mb-12">
+<div class="flex items-center gap-2 text-[10px] font-label tracking-[0.2em] text-outline mb-2">
+<span>SYSTEM</span>
+<span class="text-primary-container">/</span>
+<span>ROOT</span>
+<span class="text-primary-container">/</span>
+<span class="text-primary-container">CONFIG</span>
+</div>
+<h1 class="text-5xl font-bold tracking-tighter uppercase text-on-surface">Settings</h1>
+<div class="h-1 w-12 bg-primary-container mt-4"></div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-12 gap-8">
+<!-- Left Column: Primary Toggles -->
+<section class="md:col-span-7 space-y-8">
+<!-- SECURITY & INTERACTION -->
+<div class="bg-surface-container-low p-6 border-l-2 border-primary-container">
+<div class="flex items-center gap-2 mb-6">
+<span class="text-[10px] font-label tracking-widest text-primary-container">MODULE_01</span>
+<h2 class="text-sm font-bold tracking-[0.1em] uppercase">Security &amp; Interaction</h2>
+</div>
+<div class="space-y-6">
+<!-- Toggle: AUTO-BLOCK -->
+<div class="flex justify-between items-center">
+<div>
+<p class="text-sm font-medium">AUTO-BLOCK</p>
+<p class="text-xs text-outline">Automatically intercept unauthorized intents</p>
+</div>
+<button class="w-12 h-6 bg-surface-container-highest border border-outline flex items-center p-1 transition-colors">
+<div class="w-4 h-4 bg-primary-container"></div>
+</button>
+</div>
+<!-- Toggle: STRICT MODE -->
+<div class="flex justify-between items-center">
+<div>
+<p class="text-sm font-medium">STRICT MODE</p>
+<p class="text-xs text-outline">Enforce hardware-level isolation protocols</p>
+</div>
+<button class="w-12 h-6 bg-primary-container flex items-center justify-end p-1">
+<div class="w-4 h-4 bg-on-primary"></div>
+</button>
+</div>
+<div class="pt-4 border-t border-outline-variant/20">
+<div class="flex justify-between items-center">
+<div>
+<p class="text-sm font-medium">ENCRYPTION LEVEL</p>
+<p class="text-xs text-outline">AES-256-GCM / TACTICAL</p>
+</div>
+<span class="text-primary-container font-mono text-xs">MAXIMUM</span>
+</div>
+</div>
+</div>
+</div>
+<!-- SYSTEM INFO -->
+<div class="bg-surface-container-low p-6">
+<div class="flex items-center gap-2 mb-6">
+<span class="text-[10px] font-label tracking-widest text-outline">MODULE_03</span>
+<h2 class="text-sm font-bold tracking-[0.1em] uppercase">System Info</h2>
+</div>
+<div class="grid grid-cols-1 gap-4 font-mono text-xs">
+<div class="flex justify-between py-2 border-b border-outline-variant/10">
+<span class="text-outline">Build Name</span>
+<span class="text-on-surface">Obsidian_X86_64</span>
+</div>
+<div class="flex justify-between py-2 border-b border-outline-variant/10">
+<span class="text-outline">Kernel</span>
+<span class="text-on-surface">6.1.0-23-intent-tactical</span>
+</div>
+<div class="flex justify-between py-2 border-b border-outline-variant/10">
+<span class="text-outline">Uptime</span>
+<span class="text-primary-container">142:22:09:51</span>
+</div>
+<div class="flex justify-between py-2">
+<span class="text-outline">Architecture</span>
+<span class="text-on-surface">ARM_V9_HYPERVISOR</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Right Column: Permissions & Status -->
+<section class="md:col-span-5 space-y-8">
+<!-- PERMISSION SNAPSHOT -->
+<div class="bg-surface-container-low p-6 border-r-2 border-outline-variant">
+<div class="flex items-center gap-2 mb-6">
+<span class="text-[10px] font-label tracking-widest text-outline">MODULE_02</span>
+<h2 class="text-sm font-bold tracking-[0.1em] uppercase">Permission Snapshot</h2>
+</div>
+<div class="flex flex-wrap gap-2">
+<!-- Granted -->
+<div class="flex items-center gap-2 bg-primary-container/10 px-3 py-1.5 border border-primary-container/30">
+<span class="w-1.5 h-1.5 bg-primary-container"></span>
+<span class="text-[10px] font-bold text-primary-container tracking-wider">NETWORK: GRANTED</span>
+</div>
+<div class="flex items-center gap-2 bg-primary-container/10 px-3 py-1.5 border border-primary-container/30">
+<span class="w-1.5 h-1.5 bg-primary-container"></span>
+<span class="text-[10px] font-bold text-primary-container tracking-wider">FILESYSTEM: GRANTED</span>
+</div>
+<div class="flex items-center gap-2 bg-primary-container/10 px-3 py-1.5 border border-primary-container/30">
+<span class="w-1.5 h-1.5 bg-primary-container"></span>
+<span class="text-[10px] font-bold text-primary-container tracking-wider">KERNEL_IPC: GRANTED</span>
+</div>
+<!-- Missing/Error -->
+<div class="flex items-center gap-2 bg-[#FF2A2A]/10 px-3 py-1.5 border border-[#FF2A2A]/30">
+<span class="w-1.5 h-1.5 bg-[#FF2A2A]"></span>
+<span class="text-[10px] font-bold text-[#FF2A2A] tracking-wider">ROOT_ACCESS: MISSING</span>
+</div>
+<div class="flex items-center gap-2 bg-[#FF2A2A]/10 px-3 py-1.5 border border-[#FF2A2A]/30">
+<span class="w-1.5 h-1.5 bg-[#FF2A2A]"></span>
+<span class="text-[10px] font-bold text-[#FF2A2A] tracking-wider">GPS_LOC: MISSING</span>
+</div>
+</div>
+<div class="mt-8 p-4 bg-surface-container-high relative overflow-hidden">
+<div class="absolute top-0 right-0 p-1 opacity-20">
+<span class="material-symbols-outlined text-4xl" data-icon="qr_code_2">qr_code_2</span>
+</div>
+<p class="text-[10px] text-outline tracking-widest mb-1 uppercase">Node Signature</p>
+<p class="text-[10px] font-mono text-on-surface truncate">SHA256: 0x4f82...ae21</p>
+</div>
+</div>
+<!-- Terminal Update -->
+<button class="w-full bg-primary-container hover:bg-white text-on-primary px-6 py-4 flex justify-between items-center transition-all group">
+<span class="font-bold tracking-widest text-xs">CHECK_FOR_UPDATES</span>
+<span class="material-symbols-outlined text-sm group-hover:translate-x-1 transition-transform" data-icon="terminal">terminal</span>
+</button>
+</section>
+</div>
+<!-- Decorative Wireframe Map -->
+<div class="mt-12 h-32 w-full border border-outline-variant/20 relative overflow-hidden">
+<div class="absolute inset-0 flex items-center justify-center opacity-20">
+<span class="text-[150px] font-bold text-outline-variant select-none">CONFIG</span>
+</div>
+<div class="absolute inset-0 bg-gradient-to-t from-[#0B0C10] to-transparent"></div>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="bg-[#0B0C10] text-[#45F3FF] fixed bottom-0 left-0 w-full z-50 flex justify-around items-stretch">
+<!-- SCAN -->
+<a class="flex flex-col items-center justify-center text-[#C5C6C7] py-3 px-2 flex-1 hover:bg-[#45F3FF]/5 transition-colors" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="radar">radar</span>
+<span class="font-['Space_Grotesk'] uppercase tracking-[0.1em] text-[10px]">SCAN</span>
+</a>
+<!-- HISTORY -->
+<a class="flex flex-col items-center justify-center text-[#C5C6C7] py-3 px-2 flex-1 hover:bg-[#45F3FF]/5 transition-colors" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="receipt_long">receipt_long</span>
+<span class="font-['Space_Grotesk'] uppercase tracking-[0.1em] text-[10px]">HISTORY</span>
+</a>
+<!-- VAULT -->
+<a class="flex flex-col items-center justify-center text-[#C5C6C7] py-3 px-2 flex-1 hover:bg-[#45F3FF]/5 transition-colors" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="lock_open">lock_open</span>
+<span class="font-['Space_Grotesk'] uppercase tracking-[0.1em] text-[10px]">VAULT</span>
+</a>
+<!-- SETTINGS (ACTIVE) -->
+<a class="flex flex-col items-center justify-center border-l-4 border-[#45F3FF] bg-[#1a1b20] text-[#45F3FF] py-3 px-2 flex-1 Active: scale-100 opacity-100" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="settings_input_component">settings_input_component</span>
+<span class="font-['Space_Grotesk'] uppercase tracking-[0.1em] text-[10px]">SETTINGS</span>
+</a>
+</nav>
+</body></html>

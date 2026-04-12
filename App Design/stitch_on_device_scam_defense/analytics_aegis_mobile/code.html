@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AEGIS | System Intelligence</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-fixed": "#75f5ff",
+                        "surface-container-high": "#292a2e",
+                        "error": "#ffb4ab",
+                        "surface-container-lowest": "#0d0e12",
+                        "background": "#121317",
+                        "on-secondary-fixed-variant": "#454748",
+                        "on-primary-container": "#006c72",
+                        "inverse-on-surface": "#2f3035",
+                        "secondary": "#c5c6c7",
+                        "on-surface-variant": "#bac9ca",
+                        "on-secondary": "#2e3132",
+                        "secondary-fixed": "#e2e2e3",
+                        "surface-container": "#1f1f24",
+                        "on-tertiary-fixed-variant": "#93000a",
+                        "on-tertiary-container": "#c60012",
+                        "on-error": "#690005",
+                        "tertiary": "#fff9f8",
+                        "surface-tint": "#0cdbe7",
+                        "outline": "#849395",
+                        "tertiary-fixed": "#ffdad6",
+                        "on-primary-fixed": "#002022",
+                        "outline-variant": "#3b494a",
+                        "primary-fixed-dim": "#0cdbe7",
+                        "on-tertiary": "#690005",
+                        "inverse-surface": "#e3e2e8",
+                        "secondary-container": "#47494a",
+                        "on-tertiary-fixed": "#410002",
+                        "surface-container-low": "#1a1b20",
+                        "error-container": "#93000a",
+                        "tertiary-container": "#ffd4cf",
+                        "surface-variant": "#343439",
+                        "primary-container": "#45f3ff",
+                        "on-surface": "#e3e2e8",
+                        "primary": "#ebfeff",
+                        "tertiary-fixed-dim": "#ffb4ab",
+                        "surface-dim": "#121317",
+                        "on-error-container": "#ffdad6",
+                        "on-primary-fixed-variant": "#004f54",
+                        "on-background": "#e3e2e8",
+                        "inverse-primary": "#00696f",
+                        "secondary-fixed-dim": "#c5c6c7",
+                        "surface-container-highest": "#343439",
+                        "on-primary": "#00363a",
+                        "surface": "#121317",
+                        "surface-bright": "#38393e",
+                        "on-secondary-container": "#b7b8b9",
+                        "on-secondary-fixed": "#1a1c1d"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0px",
+                        "lg": "0px",
+                        "xl": "0px",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Space Grotesk"],
+                        "body": ["Space Grotesk"],
+                        "label": ["Space Grotesk"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            background-color: #0B0C10;
+            background-image: 
+                linear-gradient(rgba(69, 243, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(69, 243, 255, 0.03) 1px, transparent 1px);
+            background-size: 20px 20px;
+            font-family: 'Space Grotesk', sans-serif;
+            color: #C5C6C7;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .scanline {
+            width: 100%;
+            height: 2px;
+            background: rgba(69, 243, 255, 0.1);
+            position: absolute;
+            z-index: 10;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="min-h-screen pb-20 pt-16">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 rounded-none bg-[#0B0C10] border-b border-[#45F3FF]/15 flex justify-between items-center px-4 h-16 w-full">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[#45F3FF]" data-icon="shield">shield</span>
+<span class="text-2xl font-black text-[#45F3FF] tracking-tighter font-['Space_Grotesk'] uppercase">AEGIS</span>
+</div>
+<div class="flex items-center gap-4">
+<span class="text-[#45F3FF] text-[10px] tracking-widest font-bold uppercase">System: Online</span>
+<div class="w-2 h-2 bg-[#45F3FF] animate-pulse"></div>
+</div>
+</header>
+<main class="p-4 max-w-5xl mx-auto space-y-6">
+<!-- Header Section -->
+<section class="space-y-1">
+<p class="text-[10px] tracking-[0.2em] font-bold text-[#45F3FF]/60 uppercase">SYSTEM INTELLIGENCE</p>
+<h1 class="text-3xl font-black tracking-tight text-[#ebfeff] uppercase leading-none">REAL-TIME ANALYTICS</h1>
+<div class="h-px w-12 bg-[#45F3FF] mt-2"></div>
+</section>
+<!-- Metrics Grid -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+<!-- Messages Scanned -->
+<div class="bg-surface-container-low p-4 border-l-2 border-[#45F3FF]/30 flex flex-col justify-between h-32 relative group hover:bg-surface-container-high transition-colors">
+<div class="flex justify-between items-start">
+<span class="text-[10px] font-bold tracking-widest text-secondary uppercase">MESSAGES SCANNED</span>
+<span class="material-symbols-outlined text-[#45F3FF] text-sm" data-icon="hub">hub</span>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="text-4xl font-bold tracking-tighter text-[#ebfeff]">1.28M</span>
+<span class="text-[10px] text-[#45F3FF] font-mono">+12.4%</span>
+</div>
+<div class="absolute bottom-2 right-2 flex items-center gap-1">
+<span class="text-[9px] font-bold text-[#45F3FF] uppercase tracking-tighter">OPTIMAL</span>
+<div class="w-1 h-1 bg-[#45F3FF]"></div>
+</div>
+</div>
+<!-- Threats Blocked -->
+<div class="bg-surface-container-low p-4 border-l-2 border-[#FF2A2A]/30 flex flex-col justify-between h-32 relative group hover:bg-surface-container-high transition-colors">
+<div class="flex justify-between items-start">
+<span class="text-[10px] font-bold tracking-widest text-secondary uppercase">THREATS BLOCKED</span>
+<span class="material-symbols-outlined text-[#FF2A2A] text-sm" data-icon="gpp_maybe">gpp_maybe</span>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="text-4xl font-bold tracking-tighter text-[#ebfeff]">42,809</span>
+<span class="text-[10px] text-[#FF2A2A] font-mono">+2.1%</span>
+</div>
+<div class="absolute bottom-2 right-2 flex items-center gap-1">
+<span class="text-[9px] font-bold text-[#FF2A2A] uppercase tracking-tighter">ACTIVE DEFENSE</span>
+<div class="w-1 h-1 bg-[#FF2A2A] animate-pulse"></div>
+</div>
+</div>
+<!-- Detection Rate -->
+<div class="bg-surface-container-low p-4 border-l-2 border-[#45F3FF]/30 flex flex-col justify-between h-32 relative group hover:bg-surface-container-high transition-colors">
+<div class="flex justify-between items-start">
+<span class="text-[10px] font-bold tracking-widest text-secondary uppercase">DETECTION RATE</span>
+<span class="material-symbols-outlined text-[#45F3FF] text-sm" data-icon="biotech">biotech</span>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="text-4xl font-bold tracking-tighter text-[#ebfeff]">99.87%</span>
+</div>
+<div class="absolute bottom-2 right-2 flex items-center gap-1">
+<span class="text-[9px] font-bold text-[#45F3FF] uppercase tracking-tighter">STABLE</span>
+<div class="w-1 h-1 bg-[#45F3FF]"></div>
+</div>
+</div>
+</div>
+<!-- Bento Layout for Map and Chart -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+<!-- Attack Origin Heatmap -->
+<div class="lg:col-span-2 bg-surface-container-low p-6 relative overflow-hidden h-[400px]">
+<div class="flex justify-between items-center mb-4 border-b border-outline-variant/20 pb-2">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 bg-[#FF2A2A]"></span>
+<span class="text-xs font-bold tracking-widest uppercase">ATTACK ORIGIN HEATMAP</span>
+</div>
+<span class="text-[10px] font-mono text-outline uppercase tracking-tighter">REFRESH_RATE: 0.5s</span>
+</div>
+<div class="w-full h-full grayscale opacity-40 bg-center bg-no-repeat bg-contain" data-alt="Tactical world map visualization with glowing cyan data points and red threat vectors on a digital HUD schematic with dark background" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuD-vFRy8lxEkJMwGWARyU5j31X5C3Dfawk7NRtV0uoGwNiystMiP3sctvx9muWyE3Z461kaCJxYTKf-R0XY0XiQgLmbtP8vo2abqFE-_BkYi0rJwXIMsssYRW2olc-quHzpB3jDPjzehZeDU5XYFPX5Vs57K5hPu0JmUH5AdrxtmQb59cRBWQ0-xsQc5hnb6vWSxOWP0Sk7mh8Zdnd_-hFiB-R7m3PCVijq1wZJreLs_C0FrsT_m47vobjiS2Fad6pAsNQlLS0sr8PS');">
+</div>
+<!-- Floating Data Points -->
+<div class="absolute top-1/2 left-1/4 w-2 h-2 bg-[#FF2A2A] rounded-full blur-[2px] animate-pulse"></div>
+<div class="absolute top-1/3 left-2/3 w-3 h-3 bg-[#45F3FF] rounded-full blur-[2px] animate-pulse"></div>
+<div class="absolute bottom-1/4 left-1/2 w-1 h-1 bg-[#FF2A2A] rounded-full blur-[1px]"></div>
+<!-- HUD Overlays -->
+<div class="absolute bottom-6 left-6 p-2 bg-[#0B0C10]/80 border border-[#45F3FF]/20 backdrop-blur-md">
+<p class="text-[9px] font-mono leading-tight">
+                        LAT: 34.0522<br/>
+                        LONG: -118.2437<br/>
+                        VECTOR: INBOUND
+                    </p>
+</div>
+</div>
+<!-- Threat Categories -->
+<div class="bg-surface-container-low p-6 flex flex-col h-[400px]">
+<div class="flex items-center gap-2 mb-8">
+<span class="material-symbols-outlined text-[#45F3FF] text-sm" data-icon="sort">sort</span>
+<span class="text-xs font-bold tracking-widest uppercase">THREAT CATEGORIES</span>
+</div>
+<div class="space-y-6 flex-grow">
+<!-- OTP Harvest -->
+<div class="space-y-2">
+<div class="flex justify-between text-[10px] font-bold uppercase tracking-wider">
+<span>OTP HARVEST</span>
+<span class="text-[#45F3FF]">42%</span>
+</div>
+<div class="w-full h-1.5 bg-surface-container-highest">
+<div class="h-full bg-[#45F3FF]" style="width: 42%;"></div>
+</div>
+</div>
+<!-- Financial Pressure -->
+<div class="space-y-2">
+<div class="flex justify-between text-[10px] font-bold uppercase tracking-wider">
+<span>FINANCIAL PRESSURE</span>
+<span class="text-[#45F3FF]">28%</span>
+</div>
+<div class="w-full h-1.5 bg-surface-container-highest">
+<div class="h-full bg-[#45F3FF]" style="width: 28%;"></div>
+</div>
+</div>
+<!-- Impersonation -->
+<div class="space-y-2">
+<div class="flex justify-between text-[10px] font-bold uppercase tracking-wider">
+<span>IMPERSONATION</span>
+<span class="text-[#45F3FF]">19%</span>
+</div>
+<div class="w-full h-1.5 bg-surface-container-highest">
+<div class="h-full bg-[#45F3FF]" style="width: 19%;"></div>
+</div>
+</div>
+<!-- Malware Links -->
+<div class="space-y-2">
+<div class="flex justify-between text-[10px] font-bold uppercase tracking-wider">
+<span>MALWARE LINKS</span>
+<span class="text-[#45F3FF]">11%</span>
+</div>
+<div class="w-full h-1.5 bg-surface-container-highest">
+<div class="h-full bg-[#45F3FF]" style="width: 11%;"></div>
+</div>
+</div>
+</div>
+<button class="mt-auto w-full py-3 bg-[#45F3FF] text-[#00363a] text-xs font-black uppercase tracking-[0.2em] hover:bg-transparent hover:outline hover:outline-1 hover:outline-[#45F3FF] hover:text-[#45F3FF] transition-all">
+                    GENERATE REPORT
+                </button>
+</div>
+</div>
+<!-- Security Log Feed -->
+<section class="bg-[#0d0e12] border-t border-b border-[#45F3FF]/10 p-4 font-mono text-[11px] h-48 overflow-hidden relative">
+<div class="absolute top-0 left-0 w-full p-1 bg-surface-container-high/50 flex justify-between px-4">
+<span class="text-[#45F3FF]/50 uppercase text-[9px] font-bold">LIVE_SECURITY_LOG_STREAM</span>
+<span class="text-[#45F3FF]/50 uppercase text-[9px] font-bold">v4.0.2-ALPHA</span>
+</div>
+<div class="mt-6 space-y-1 text-secondary overflow-y-auto h-32">
+<p><span class="text-[#45F3FF]">[14:22:01]</span> <span class="text-[#FF2A2A]">BLOCK</span> | ORIGIN: 0x82A1C | PORT: 443 | TARGET: USER_NODE_7</p>
+<p><span class="text-[#45F3FF]">[14:22:03]</span> SCAN | ORIGIN: 0x19B22 | PORT: 80 | THREAT_LVL: 0.02</p>
+<p><span class="text-[#45F3FF]">[14:22:05]</span> <span class="text-[#FF2A2A]">BLOCK</span> | ORIGIN: 0xCC401 | PORT: 8080 | TARGET: API_GATEWAY</p>
+<p><span class="text-[#45F3FF]">[14:22:08]</span> DECRYPT | ORIGIN: LOCAL | SRC: AEGIS_CORE | STATUS: SUCCESS</p>
+<p><span class="text-[#45F3FF]">[14:22:12]</span> <span class="text-[#FF2A2A]">BLOCK</span> | ORIGIN: 0x99F12 | PORT: 22 | TARGET: SSH_DAEMON</p>
+<p><span class="text-[#45F3FF]">[14:22:15]</span> SCAN | ORIGIN: 0x22D19 | PORT: 443 | THREAT_LVL: 0.14</p>
+<p><span class="text-[#45F3FF]">[14:22:18]</span> SYSTEM | MEMORY_OPTIMIZATION | PURGED: 12.4MB</p>
+</div>
+<div class="absolute bottom-0 left-0 w-full h-12 bg-gradient-to-t from-[#0d0e12] to-transparent pointer-events-none"></div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-stretch h-16 bg-[#121317] border-t border-[#45F3FF]/15 z-50">
+<a class="flex flex-col items-center justify-center text-[#C5C6C7] py-2 w-full hover:bg-[#45F3FF]/5 transition-colors" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="gpp_maybe">gpp_maybe</span>
+<span class="font-['Space_Grotesk'] uppercase text-[10px] tracking-[0.1em] font-medium">Threats</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#C5C6C7] py-2 w-full hover:bg-[#45F3FF]/5 transition-colors" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="terminal">terminal</span>
+<span class="font-['Space_Grotesk'] uppercase text-[10px] tracking-[0.1em] font-medium">Logs</span>
+</a>
+<a class="flex flex-col items-center justify-center border-l-4 border-[#45F3FF] bg-[#1a1b20] text-[#45F3FF] py-2 w-full transition-all active:scale-95 duration-75" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="insights" style="font-variation-settings: 'FILL' 1;">insights</span>
+<span class="font-['Space_Grotesk'] uppercase text-[10px] tracking-[0.1em] font-medium">Analytics</span>
+</a>
+<a class="flex flex-col items-center justify-center text-[#C5C6C7] py-2 w-full hover:bg-[#45F3FF]/5 transition-colors" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="settings">settings</span>
+<span class="font-['Space_Grotesk'] uppercase text-[10px] tracking-[0.1em] font-medium">Settings</span>
+</a>
+</nav>
+</body></html>

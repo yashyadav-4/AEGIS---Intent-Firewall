@@ -32,6 +32,8 @@ export interface Settings {
   vibration: boolean;
   messageProtection: boolean;
   callProtection: boolean;
+  scamAssistBridgeEnabled: boolean;
+  scamAssistBridgeEndpoint: string;
 }
 
 const THREATS_KEY = 'threats';
@@ -46,6 +48,8 @@ const DEFAULT_SETTINGS: Settings = {
   vibration: true,
   messageProtection: false,
   callProtection: false,
+  scamAssistBridgeEnabled: false,
+  scamAssistBridgeEndpoint: '',
 };
 
 // ─── Threats ───────────────────────────────────────────

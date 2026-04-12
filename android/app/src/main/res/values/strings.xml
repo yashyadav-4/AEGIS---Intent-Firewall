@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">IntentFirewall V2</string>
+    <string name="accessibility_description">Aegis uses Accessibility APIs strictly to bypass hardware microphone locks during active phone calls, enabling real-time on-device scam detection.</string>
 </resources>

@@ -1,5 +1,5 @@
 import React, {useState, useEffect, useCallback} from 'react';
-import {Alert, View, Text, ScrollView, TouchableOpacity, Switch, StyleSheet, StatusBar} from 'react-native';
+import {Alert, View, Text, ScrollView, TouchableOpacity, Switch, StyleSheet, StatusBar, TextInput, Linking, Platform} from 'react-native';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import {
   getAllPermissionStatus,
@@ -9,6 +9,7 @@ import {
   requestAllRequiredPermissions
 } from '../utils/permissionManager';
 import {getSettings, saveSettings, clearThreats} from '../utils/storage';
+import {getScamAssistBridgeConfig, updateScamAssistBridgeConfig} from '../utils/scamAssistBridge';
 
 const SettingsScreen = () => {
   const navigation = useNavigation();
@@ -16,6 +17,7 @@ const SettingsScreen = () => {
     notification: false,
     notificationListener: false,
     callScreening: false,
+    defaultCallingApp: false,
     audioRecording: false,
     sms: false,
   });
@@ -24,6 +26,8 @@ const SettingsScreen = () => {
   const [autoBlock, setAutoBlock] = useState(false);
   const [vibration, setVibration] = useState(true);
   const [strictMode, setStrictMode] = useState(false);
+  const [scamAssistBridgeEnabled, setScamAssistBridgeEnabled] = useState(false);
+  const [scamAssistBridgeEndpoint, setScamAssistBridgeEndpoint] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
   const loadPermissions = async () => {
@@ -45,11 +49,14 @@ const SettingsScreen = () => {
     const loadSavedSettings = async () => {
       try {
         const saved = await getSettings();
+        const bridgeConfig = await getScamAssistBridgeConfig();
         if (saved) {
           setAutoBlock(saved.autoBlock ?? false);
           setStrictMode(saved.strictMode ?? false);
           setNotifications(saved.notifications ?? true);
           setVibration(saved.vibration ?? true);
+          setScamAssistBridgeEnabled(saved.scamAssistBridgeEnabled ?? bridgeConfig.enabled ?? false);
+          setScamAssistBridgeEndpoint(saved.scamAssistBridgeEndpoint ?? bridgeConfig.endpoint ?? '');
         }
         await loadPermissions();
       } catch (err) {
@@ -100,6 +107,31 @@ const SettingsScreen = () => {
     }
   }
 
+  const handleSaveBridgeConfig = async () => {
+    const endpoint = scamAssistBridgeEndpoint.trim();
+    if (scamAssistBridgeEnabled && endpoint.length === 0) {
+      Alert.alert('Bridge endpoint missing', 'Enter a valid Scam Assist endpoint before enabling bridge mode.');
+      return;
+    }
+
+    const applied = await updateScamAssistBridgeConfig({
+      enabled: scamAssistBridgeEnabled,
+      endpoint,
+    });
+
+    await saveSettings({
+      scamAssistBridgeEnabled,
+      scamAssistBridgeEndpoint: endpoint,
+    });
+
+    if (!applied) {
+      Alert.alert('Bridge config saved locally', 'Native bridge config could not be updated right now.');
+      return;
+    }
+
+    Alert.alert('Bridge configuration saved', 'Scam Assist bridge settings are active for upcoming calls.');
+  };
+
   const statusChip = (granted: boolean) => (
     <View style={[styles.statusChip, granted ? styles.grantedChip : styles.missingChip]}>
       <Text style={styles.statusChipText}>{granted ? 'Granted' : 'Missing'}</Text>
@@ -116,7 +148,7 @@ const SettingsScreen = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0D0D0D" />
+      <StatusBar barStyle="light-content" backgroundColor="#0B0C10" />
 
       <View style={styles.header}>
         <Text style={styles.headerTitle}>⚙️ Settings</Text>
@@ -149,11 +181,44 @@ const SettingsScreen = () => {
             <Switch
               value={item.value}
               onValueChange={v => handleToggle(item.key, v, item.setter)}
-              trackColor={{false: '#333', true: '#E63946'}}
+              trackColor={{false: '#333', true: '#FF2A2A'}}
               thumbColor={item.value ? '#fff' : '#888'}
             />
           </View>
         ))}
+
+        <Text style={styles.sectionTitle}>SCAM ASSIST BRIDGE</Text>
+
+        <View style={styles.settingCard}>
+          <View style={styles.settingLeft}>
+            <Text style={styles.settingTitle}>Enable Bridge Upload</Text>
+            <Text style={styles.settingSub}>Send call WAV + transcript metadata to backend for reliable STT and scam scoring.</Text>
+          </View>
+          <Switch
+            value={scamAssistBridgeEnabled}
+            onValueChange={setScamAssistBridgeEnabled}
+            trackColor={{false: '#333', true: '#FF2A2A'}}
+            thumbColor={scamAssistBridgeEnabled ? '#fff' : '#888'}
+          />
+        </View>
+
+        <View style={styles.inputCard}>
+          <Text style={styles.inputLabel}>Bridge Endpoint URL</Text>
+          <TextInput
+            style={styles.input}
+            value={scamAssistBridgeEndpoint}
+            onChangeText={setScamAssistBridgeEndpoint}
+            placeholder="https://your-server.example.com/scam-assist/upload"
+            placeholderTextColor="#8C8C8C"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <Text style={styles.permissionHint}>This endpoint receives WAV + transcript metadata after a call ends.</Text>
+        </View>
+
+        <TouchableOpacity style={styles.actionButtonSecondary} onPress={handleSaveBridgeConfig}>
+          <Text style={styles.actionTextSecondary}>Save Bridge Configuration</Text>
+        </TouchableOpacity>
 
         <Text style={styles.sectionTitle}>PERMISSIONS</Text>
 
@@ -165,6 +230,10 @@ const SettingsScreen = () => {
           <View style={styles.permissionRow}>
             <Text style={styles.permissionLabel}>Call Screening</Text>
             {statusChip(permissions.callScreening)}
+          </View>
+          <View style={styles.permissionRow}>
+            <Text style={styles.permissionLabel}>Default Calling App</Text>
+            {statusChip(permissions.defaultCallingApp)}
           </View>
           <View style={styles.permissionRow}>
             <Text style={styles.permissionLabel}>Notifications</Text>
@@ -189,8 +258,49 @@ const SettingsScreen = () => {
 
         <TouchableOpacity
           style={styles.actionButtonSecondary}
+          onPress={async () => {
+            const {requestDefaultCallingAppPermission} = await import('../utils/permissionManager');
+            await requestDefaultCallingAppPermission();
+            await loadPermissions();
+          }}>
+          <Text style={styles.actionTextSecondary}>Make Default Calling App</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionButtonSecondary}
           onPress={promptNotificationListenerSetup}>
           <Text style={styles.actionTextSecondary}>Open Notification Listener Access</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => {
+            Linking.openSettings()
+          }}
+          style={styles.setupButton}>
+          <Text style={styles.setupButtonText}>
+            Set as Call Screening App
+          </Text>
+          <Text style={styles.setupButtonSub}>
+            Required for pre-ring scam detection
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={async () => {
+            if (Platform.OS === 'android') {
+              const pkg = 'com.intentfirewall'
+              Linking.openURL(
+                `android.settings.action.MANAGE_OVERLAY_PERMISSION?package=${pkg}`
+              )
+            }
+          }}
+          style={styles.setupButton}>
+          <Text style={styles.setupButtonText}>
+            Grant Overlay Permission
+          </Text>
+          <Text style={styles.setupButtonSub}>
+            Required for call warning screen
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -225,7 +335,7 @@ const SettingsScreen = () => {
             <Switch
               value={item.value}
               onValueChange={v => handleToggle(item.key, v, item.setter)}
-              trackColor={{false: '#333', true: '#E63946'}}
+              trackColor={{false: '#333', true: '#FF2A2A'}}
               thumbColor={item.value ? '#fff' : '#888'}
             />
           </View>
@@ -242,8 +352,8 @@ const SettingsScreen = () => {
           </Text>
         </View>
         
-        <TouchableOpacity style={{marginTop: 20, padding: 15, backgroundColor: 'rgba(255,0,0,0.1)', borderRadius: 10, borderWidth: 1, borderColor: '#E63946'}} onPress={handleClearHistory}>
-          <Text style={{color: '#E63946', textAlign: 'center', fontWeight: 'bold'}}>🗑️ Clear All History</Text>
+        <TouchableOpacity style={{marginTop: 20, padding: 15, backgroundColor: 'rgba(255,0,0,0.1)', borderRadius: 10, borderWidth: 1, borderColor: '#FF2A2A'}} onPress={handleClearHistory}>
+          <Text style={{color: '#FF2A2A', textAlign: 'center', fontFamily: 'SpaceGrotesk', fontWeight: 'bold'}}>🗑️ Clear All History</Text>
         </TouchableOpacity>
 
         <View style={{height: 30}} />
@@ -276,30 +386,30 @@ const SettingsScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {flex: 1, backgroundColor: '#0D0D0D'},
+  container: {flex: 1, backgroundColor: '#0B0C10'},
   header: {
     paddingTop: 60, paddingHorizontal: 20, paddingBottom: 20,
-    backgroundColor: '#1A1A2E', borderBottomWidth: 1, borderBottomColor: '#E63946',
+    backgroundColor: '#0B0C10', borderBottomWidth: 1, borderBottomColor: '#FF2A2A',
   },
-  headerTitle: {fontSize: 24, fontWeight: 'bold', color: '#fff'},
-  headerSub: {fontSize: 12, color: '#A0AEC0', marginTop: 2},
+  headerTitle: {fontSize: 24, fontFamily: 'SpaceGrotesk', fontWeight: 'bold', color: '#fff'},
+  headerSub: {fontSize: 12, color: '#C5C6C7', marginTop: 2},
   scroll: {flex: 1, paddingHorizontal: 20},
   
   sectionTitle: {
-    fontSize: 11, fontWeight: 'bold', color: '#A0AEC0',
+    fontSize: 11, fontFamily: 'SpaceGrotesk', fontWeight: 'bold', color: '#C5C6C7',
     marginTop: 24, marginBottom: 12, letterSpacing: 1.5,
   },
   settingCard: {
-    backgroundColor: '#16213E', borderRadius: 12, padding: 16,
+    backgroundColor: '#1C1D24', borderRadius: 12, padding: 16,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: 10, borderWidth: 1, borderColor: '#2D3748',
+    marginBottom: 10, borderWidth: 1, borderColor: '#C5C6C750',
   },
   settingLeft: {flex: 1},
-  settingTitle: {fontSize: 15, fontWeight: '600', color: '#fff'},
-  settingSub: {fontSize: 12, color: '#A0AEC0', marginTop: 2},
+  settingTitle: {fontSize: 15, fontFamily: 'SpaceGrotesk', fontWeight: '600', color: '#fff'},
+  settingSub: {fontSize: 12, color: '#C5C6C7', marginTop: 2},
   permissionCardBox: {
-    backgroundColor: '#16213E', borderRadius: 12, padding: 16,
-    marginBottom: 10, borderWidth: 1, borderColor: '#2D3748',
+    backgroundColor: '#1C1D24', borderRadius: 12, padding: 16,
+    marginBottom: 10, borderWidth: 1, borderColor: '#C5C6C750',
   },
   permissionRow: {
     flexDirection: 'row',
@@ -307,7 +417,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
-  permissionLabel: {fontSize: 14, color: '#fff', fontWeight: '600'},
+  inputCard: {
+    backgroundColor: '#1C1D24', borderRadius: 12, padding: 16,
+    marginBottom: 10, borderWidth: 1, borderColor: '#C5C6C750',
+  },
+  inputLabel: {
+    fontSize: 13, color: '#C5C6C7', marginBottom: 8, fontFamily: 'SpaceGrotesk',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#C5C6C750',
+    backgroundColor: '#101116',
+    color: '#fff',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+  },
+  permissionLabel: {fontSize: 14, color: '#fff', fontFamily: 'SpaceGrotesk', fontWeight: '600'},
   statusChip: {
     borderRadius: 999,
     paddingHorizontal: 10,
@@ -315,27 +442,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   grantedChip: {
-    backgroundColor: '#0D2818',
-    borderColor: '#2D6A4F',
+    backgroundColor: '#0B0C10',
+    borderColor: '#45F3FF',
   },
   missingChip: {
     backgroundColor: '#2D0D0D',
-    borderColor: '#E63946',
+    borderColor: '#FF2A2A',
   },
   statusChipText: {
     fontSize: 11,
     color: '#fff',
-    fontWeight: '700',
+    fontFamily: 'SpaceGrotesk', fontWeight: '700',
     letterSpacing: 0.3,
   },
   permissionHint: {
-    color: '#A0AEC0',
+    color: '#C5C6C7',
     fontSize: 12,
     lineHeight: 18,
     marginTop: 6,
   },
   actionButton: {
-    backgroundColor: '#E63946',
+    backgroundColor: '#FF2A2A',
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
@@ -344,42 +471,64 @@ const styles = StyleSheet.create({
   actionText: {
     color: '#fff',
     fontSize: 15,
-    fontWeight: '700',
+    fontFamily: 'SpaceGrotesk', fontWeight: '700',
   },
   actionButtonSecondary: {
-    backgroundColor: '#16213E',
+    backgroundColor: '#1C1D24',
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#2D3748',
+    borderColor: '#C5C6C750',
   },
   actionTextSecondary: {
     color: '#fff',
     fontSize: 15,
-    fontWeight: '600',
+    fontFamily: 'SpaceGrotesk', fontWeight: '600',
+  },
+  setupButton: {
+    backgroundColor: '#1C1D24',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    alignItems: 'flex-start',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#45F3FF40',
+  },
+  setupButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontFamily: 'SpaceGrotesk',
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  setupButtonSub: {
+    color: '#C5C6C7',
+    fontSize: 12,
+    lineHeight: 16,
   },
   aboutCard: {
-    backgroundColor: '#1A1A2E', borderRadius: 12, padding: 16,
-    borderWidth: 1, borderColor: '#2D3748', alignItems: 'center'
+    backgroundColor: '#0B0C10', borderRadius: 12, padding: 16,
+    borderWidth: 1, borderColor: '#C5C6C750', alignItems: 'center'
   },
-  aboutTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 4 },
-  aboutSub: { fontSize: 12, color: '#A0AEC0', marginBottom: 12 },
-  aboutDesc: { fontSize: 14, color: '#A0AEC0', textAlign: 'center', lineHeight: 20 },
+  aboutTitle: { fontSize: 18, fontFamily: 'SpaceGrotesk', fontWeight: 'bold', color: '#fff', marginBottom: 4 },
+  aboutSub: { fontSize: 12, color: '#C5C6C7', marginBottom: 12 },
+  aboutDesc: { fontSize: 14, color: '#C5C6C7', textAlign: 'center', lineHeight: 20 },
   bottomNav: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     paddingVertical: 16,
     paddingBottom: 30, // iPhone spacing
-    backgroundColor: '#16213E',
+    backgroundColor: '#1C1D24',
     borderTopWidth: 1,
-    borderTopColor: '#2D3748',
+    borderTopColor: '#C5C6C750',
   },
   navItem: {alignItems: 'center'},
   navIcon: {fontSize: 20, marginBottom: 4},
-  navLabel: {fontSize: 10, color: '#888', fontWeight: '600'},
-  navLabelActive: {color: '#E63946'},
+  navLabel: {fontSize: 10, color: '#888', fontFamily: 'SpaceGrotesk', fontWeight: '600'},
+  navLabelActive: {color: '#FF2A2A'},
 });
 
 export default SettingsScreen;

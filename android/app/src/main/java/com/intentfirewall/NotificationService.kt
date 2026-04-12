@@ -30,17 +30,87 @@ class NotificationService : NotificationListenerService() {
         tier2?.close()
     }
 
+    private fun extractDeepText(bundle: android.os.Bundle): String? {
+        for (key in bundle.keySet()) {
+            val value = bundle.get(key)
+            if (value is CharSequence && value.toString().contains("₹500")) {
+                return value.toString()
+            }
+            if (value is android.os.Bundle) {
+                val res = extractDeepText(value)
+                if (res != null) return res
+            }
+            if (value is Array<*>) {
+                for (item in value) {
+                    if (item is android.os.Bundle) {
+                        val res = extractDeepText(item)
+                        if (res != null) return res
+                    }
+                }
+            }
+        }
+        return null
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null) return
         val packageName = sbn.packageName
+        
+        // Ignore our own foreground service notifications to prevent infinite mic loops
+        if (packageName == applicationContext.packageName) return
+        
         Log.d("IntentFirewall", "Notification received from: $packageName")
 
         val extras = sbn.notification?.extras ?: return
 
         val title = extras.getString("android.title") ?: ""
-        val text = extras.getCharSequence("android.text")?.toString() ?: ""
+        var text = extras.getCharSequence("android.text")?.toString() ?: ""
+        
+        // Android 13/14/15 hides sensitive OTPs inside bigText or other extras
+        if (text.contains("Sensitive notification") || text.isEmpty()) {
+            val deepFound = extractDeepText(extras)
+            if (!deepFound.isNullOrEmpty()) {
+                text = deepFound
+            }
+        }
+
+        AegisCallState.onNotificationSignal(
+            context = applicationContext,
+            packageName = packageName,
+            title = title,
+            text = text
+        )
 
         Log.d("IntentFirewall", "Title: $title | Text: $text")
+
+        // Ignore UI summaries and telecom logs 
+        val isCallNotification = text.contains("call", ignoreCase = true) || 
+                                 title.contains("call", ignoreCase = true) ||
+                                 text.contains("ongoing", ignoreCase = true) ||
+                                 packageName.contains("dialer") ||
+                                 packageName.contains("incallui") || 
+                                 packageName.contains("telecom") ||
+                                 packageName.contains("whatsapp") && (text.contains("voice") || text.contains("video"));
+                                 
+        if (isCallNotification || text.matches(Regex(".*\\d+ messages from \\d+ chats.*", RegexOption.IGNORE_CASE))) {
+            Log.d("IntentFirewall", "Skipping analysis for raw Call/VoIP notification, BUT LAUNCHING ACTIVE AUDIO+STT MONITOR")
+            try {
+                val monitorIntent = Intent(applicationContext, AegisCallMonitor::class.java).apply {
+                    action = AegisCallMonitor.ACTION_START
+                }
+                androidx.core.content.ContextCompat.startForegroundService(applicationContext, monitorIntent)
+            } catch (e: Exception) {
+                Log.e("IntentFirewall", "Failed to start Call Monitor: ${e.message}")
+            }
+            return
+        }
+        
+        // Ignore very short normal texts
+        if (text.length <= 4 && !text.matches(Regex(".*\\d+.*"))) {
+             Log.d("IntentFirewall", "Skipping deeply short message: $text")
+             return
+        }
+
 
         // Only process relevant apps
         val trackedApps = listOf(
@@ -50,7 +120,8 @@ class NotificationService : NotificationListenerService() {
             "com.android.mms",
             "com.google.android.apps.messaging",
             "com.samsung.android.messaging",
-            "com.truecaller"
+            "com.truecaller",
+            "com.android.shell"
         )
 
         if (packageName in trackedApps && text.isNotEmpty()) {
@@ -90,12 +161,13 @@ class NotificationService : NotificationListenerService() {
             ) ?: Tier2Result(isScam = false, confidence = 0.0f, label = "SAFE")
 
             // Tier 3 — escalate
-            val tier3Flagged = if (waitTier3 || tier2Result.isScam) {
+            val tier3Flagged = if (tier2Result.isScam || finalFlagged || tier2Result.confidence > 0.6f) {
                 val tier3Model = tier3
                 if (tier3Model != null) {
-                    // Use Tier 1 / Tier 2 result as proxy feature vector
+                    // Always process semantic data through Tier 3 to detect purely evasive texts
+                    val confidenceUsed = if (tier2Result.confidence > 0) tier2Result.confidence else 0.85f
                     val proxyFeatures = FloatArray(768) {
-                        if (finalFlagged) 0.8f else tier2Result.confidence
+                        if (finalFlagged) 0.8f else confidenceUsed
                     }
                     val tier3Result = tier3Model.analyze(proxyFeatures)
                     Log.d("AegisZero", "[T3] score=${tier3Result.confidence} " +
@@ -109,6 +181,19 @@ class NotificationService : NotificationListenerService() {
 
             // Final combined flag
             finalFlagged = finalFlagged || tier2Result.isScam || tier3Flagged
+
+            if (finalFlagged) {
+                val warningIntent = Intent(applicationContext, FrictionWarningActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    putExtra(FrictionWarningActivity.EXTRA_CONFIDENCE_SCORE, 0.95f)
+                    putExtra(FrictionWarningActivity.WARNING_REASON, "Scam Message Intercepted.")
+                }
+                runCatching {
+                    applicationContext.startActivity(warningIntent)
+                }.onFailure { error ->
+                    Log.e("IntentFirewall", "Failed to launch scam warning UI", error)
+                }
+            }
 
             // Always forward to React Native layer
             NotificationEventEmitter.sendNotification(

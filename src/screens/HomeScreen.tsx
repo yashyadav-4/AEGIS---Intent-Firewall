@@ -169,7 +169,7 @@ const HomeScreen = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0D0D0D" />
+      <StatusBar barStyle="light-content" backgroundColor="#0B0C10" />
 
       <View style={styles.header}>
         <Text style={styles.headerTitle}>🛡️ Intent Firewall</Text>
@@ -198,7 +198,7 @@ const HomeScreen = () => {
           <Switch
             value={messageProtection}
             onValueChange={handleMessageToggle}
-            trackColor={{false: '#333', true: '#E63946'}}
+            trackColor={{false: '#333', true: '#FF2A2A'}}
             thumbColor={messageProtection ? '#fff' : '#888'}
           />
         </View>
@@ -211,7 +211,7 @@ const HomeScreen = () => {
           <Switch
             value={callProtection}
             onValueChange={handleCallToggle}
-            trackColor={{false: '#333', true: '#E63946'}}
+            trackColor={{false: '#333', true: '#FF2A2A'}}
             thumbColor={callProtection ? '#fff' : '#888'}
           />
         </View>
@@ -269,72 +269,72 @@ const HomeScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {flex: 1, backgroundColor: '#0D0D0D'},
+  container: {flex: 1, backgroundColor: '#0B0C10'},
   header: {
     paddingTop: 60, paddingHorizontal: 20, paddingBottom: 20,
-    backgroundColor: '#1A1A2E', borderBottomWidth: 1, borderBottomColor: '#E63946',
+    backgroundColor: '#0B0C10', borderBottomWidth: 1, borderBottomColor: '#FF2A2A',
   },
-  headerTitle: {fontSize: 24, fontWeight: 'bold', color: '#fff'},
-  headerSub: {fontSize: 12, color: '#A0AEC0', marginTop: 2},
+  headerTitle: {fontSize: 24, fontFamily: 'SpaceGrotesk', fontWeight: 'bold', color: '#fff'},
+  headerSub: {fontSize: 12, color: '#C5C6C7', marginTop: 2},
   scroll: {flex: 1, paddingHorizontal: 20},
   statusCard: {
     borderRadius: 16, padding: 24, marginTop: 20,
     alignItems: 'center', borderWidth: 1,
   },
-  statusActive: {backgroundColor: '#0D2818', borderColor: '#2D6A4F'},
-  statusInactive: {backgroundColor: '#2D0D0D', borderColor: '#E63946'},
+  statusActive: {backgroundColor: '#0B0C10', borderColor: '#45F3FF'},
+  statusInactive: {backgroundColor: '#2D0D0D', borderColor: '#FF2A2A'},
   statusIcon: {fontSize: 40},
-  statusTitle: {fontSize: 22, fontWeight: 'bold', color: '#fff', marginTop: 8},
-  statusSub: {fontSize: 13, color: '#A0AEC0', marginTop: 4},
+  statusTitle: {fontSize: 22, fontFamily: 'SpaceGrotesk', fontWeight: 'bold', color: '#fff', marginTop: 8},
+  statusSub: {fontSize: 13, color: '#C5C6C7', marginTop: 4},
   sectionTitle: {
-    fontSize: 11, fontWeight: 'bold', color: '#A0AEC0',
+    fontSize: 11, fontFamily: 'SpaceGrotesk', fontWeight: 'bold', color: '#C5C6C7',
     marginTop: 24, marginBottom: 12, letterSpacing: 1.5,
   },
   toggleCard: {
-    backgroundColor: '#16213E', borderRadius: 12, padding: 16,
+    backgroundColor: '#1C1D24', borderRadius: 12, padding: 16,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: 10, borderWidth: 1, borderColor: '#2D3748',
+    marginBottom: 10, borderWidth: 1, borderColor: '#C5C6C750',
   },
   toggleLeft: {flex: 1},
-  toggleTitle: {fontSize: 15, fontWeight: '600', color: '#fff'},
-  toggleSub: {fontSize: 12, color: '#A0AEC0', marginTop: 2},
+  toggleTitle: {fontSize: 15, fontFamily: 'SpaceGrotesk', fontWeight: '600', color: '#fff'},
+  toggleSub: {fontSize: 12, color: '#C5C6C7', marginTop: 2},
   emptyCard: {
-    backgroundColor: '#16213E', borderRadius: 12, padding: 24,
-    alignItems: 'center', borderWidth: 1, borderColor: '#2D3748',
+    backgroundColor: '#1C1D24', borderRadius: 12, padding: 24,
+    alignItems: 'center', borderWidth: 1, borderColor: '#C5C6C750',
   },
   emptyIcon: {fontSize: 32},
-  emptyText: {fontSize: 14, color: '#A0AEC0', marginTop: 8},
+  emptyText: {fontSize: 14, color: '#C5C6C7', marginTop: 8},
   threatCard: {
-    backgroundColor: '#16213E', borderRadius: 12, padding: 14,
+    backgroundColor: '#1C1D24', borderRadius: 12, padding: 14,
     flexDirection: 'row', alignItems: 'center',
-    marginBottom: 8, borderWidth: 1, borderColor: '#E6394630',
+    marginBottom: 8, borderWidth: 1, borderColor: '#FF2A2A30',
   },
   threatIcon: {fontSize: 24, marginRight: 12},
   threatInfo: {flex: 1},
-  threatApp: {fontSize: 14, fontWeight: '600', color: '#fff'},
-  threatCategory: {fontSize: 11, color: '#E63946', marginTop: 2},
-  threatConfidence: {fontSize: 16, fontWeight: 'bold', color: '#E63946'},
+  threatApp: {fontSize: 14, fontFamily: 'SpaceGrotesk', fontWeight: '600', color: '#fff'},
+  threatCategory: {fontSize: 11, color: '#FF2A2A', marginTop: 2},
+  threatConfidence: {fontSize: 16, fontFamily: 'SpaceGrotesk', fontWeight: 'bold', color: '#FF2A2A'},
   privacyCard: {
-    backgroundColor: '#16213E', borderRadius: 12, padding: 16,
-    marginTop: 8, borderWidth: 1, borderColor: '#2D3748',
+    backgroundColor: '#1C1D24', borderRadius: 12, padding: 16,
+    marginTop: 8, borderWidth: 1, borderColor: '#C5C6C750',
   },
-  privacyText: {fontSize: 12, color: '#A0AEC0', textAlign: 'center', lineHeight: 18},
+  privacyText: {fontSize: 12, color: '#C5C6C7', textAlign: 'center', lineHeight: 18},
   simulateButton: {
-    backgroundColor: '#E63946', borderRadius: 12, paddingVertical: 14,
+    backgroundColor: '#FF2A2A', borderRadius: 12, paddingVertical: 14,
     marginTop: 12, alignItems: 'center',
   },
   simulateButtonText: {
-    color: '#fff', fontSize: 14, fontWeight: '700', letterSpacing: 0.5,
+    color: '#fff', fontSize: 14, fontFamily: 'SpaceGrotesk', fontWeight: '700', letterSpacing: 0.5,
   },
   bottomNav: {
-    flexDirection: 'row', backgroundColor: '#1A1A2E',
-    borderTopWidth: 1, borderTopColor: '#2D3748',
+    flexDirection: 'row', backgroundColor: '#0B0C10',
+    borderTopWidth: 1, borderTopColor: '#C5C6C750',
     paddingBottom: 20, paddingTop: 10,
   },
   navItem: {flex: 1, alignItems: 'center'},
   navIcon: {fontSize: 22},
-  navLabel: {fontSize: 11, color: '#A0AEC0', marginTop: 4},
-  navLabelActive: {color: '#E63946', fontWeight: 'bold'},
+  navLabel: {fontSize: 11, color: '#C5C6C7', marginTop: 4},
+  navLabelActive: {color: '#FF2A2A', fontFamily: 'SpaceGrotesk', fontWeight: 'bold'},
 });
 
 export default HomeScreen;

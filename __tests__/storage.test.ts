@@ -8,7 +8,6 @@ describe('storage', () => {
 
   test('saves and retrieves threat', async () => {
     await saveThreat({
-      id: 'test-1',
       app: 'WhatsApp',
       message: 'Test scam',
       category: 'OTP',
@@ -16,7 +15,6 @@ describe('storage', () => {
       blocked: false,
       appIcon: '',
       time: 'Now',
-      timestamp: Date.now()
     });
     
     const threats = await getThreats();
@@ -26,7 +24,6 @@ describe('storage', () => {
 
   test('clears all threats', async () => {
     await saveThreat({ 
-      id: 'test-1', 
       app: 'WhatsApp', 
       message: 'Test', 
       category: 'OTP', 
@@ -34,7 +31,6 @@ describe('storage', () => {
       blocked: false,
       appIcon: '',
       time: 'Now',
-      timestamp: Date.now()
     });
     await clearThreats();
     

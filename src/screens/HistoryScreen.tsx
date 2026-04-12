@@ -125,7 +125,7 @@ const HistoryScreen = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0D0D0D" />
+      <StatusBar barStyle="light-content" backgroundColor="#0B0C10" />
 
       <View style={styles.header}>
         <Text style={styles.headerTitle}>📋 Threat History</Text>
@@ -278,19 +278,19 @@ const HistoryScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {flex: 1, backgroundColor: '#0D0D0D'},
+  container: {flex: 1, backgroundColor: '#0B0C10'},
   header: {
     paddingTop: 60, paddingHorizontal: 20, paddingBottom: 20,
-    backgroundColor: '#1A1A2E', borderBottomWidth: 1, borderBottomColor: '#E63946',
+    backgroundColor: '#0B0C10', borderBottomWidth: 1, borderBottomColor: '#FF2A2A',
   },
-  headerTitle: {fontSize: 24, fontWeight: 'bold', color: '#fff'},
-  headerSub: {fontSize: 12, color: '#A0AEC0', marginTop: 2},
+  headerTitle: {fontSize: 24, fontFamily: 'SpaceGrotesk', fontWeight: 'bold', color: '#fff'},
+  headerSub: {fontSize: 12, color: '#C5C6C7', marginTop: 2},
   tabRow: {
     flexDirection: 'row',
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 6,
-    backgroundColor: '#1A1A2E',
+    backgroundColor: '#0B0C10',
     gap: 8,
   },
   tabPill: {
@@ -299,46 +299,46 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#2D3748',
+    borderColor: '#C5C6C750',
     backgroundColor: '#141E35',
   },
-  tabPillActive: {backgroundColor: '#E63946', borderColor: '#E63946'},
-  tabPillText: {fontSize: 12, color: '#A0AEC0', fontWeight: '700'},
+  tabPillActive: {backgroundColor: '#FF2A2A', borderColor: '#FF2A2A'},
+  tabPillText: {fontSize: 12, color: '#C5C6C7', fontFamily: 'SpaceGrotesk', fontWeight: '700'},
   tabPillTextActive: {color: '#fff'},
   filterRow: {
     flexDirection: 'row', paddingHorizontal: 20,
-    paddingVertical: 12, backgroundColor: '#1A1A2E', gap: 8,
+    paddingVertical: 12, backgroundColor: '#0B0C10', gap: 8,
     flexWrap: 'wrap',
   },
   filterTab: {
     paddingHorizontal: 16, paddingVertical: 6,
-    borderRadius: 20, borderWidth: 1, borderColor: '#2D3748',
+    borderRadius: 20, borderWidth: 1, borderColor: '#C5C6C750',
   },
-  filterTabActive: {backgroundColor: '#E63946', borderColor: '#E63946'},
-  filterText: {fontSize: 12, color: '#A0AEC0'},
-  filterTextActive: {color: '#fff', fontWeight: 'bold'},
+  filterTabActive: {backgroundColor: '#FF2A2A', borderColor: '#FF2A2A'},
+  filterText: {fontSize: 12, color: '#C5C6C7'},
+  filterTextActive: {color: '#fff', fontFamily: 'SpaceGrotesk', fontWeight: 'bold'},
   scroll: {flex: 1, paddingHorizontal: 20, paddingTop: 12},
   emptyState: {alignItems: 'center', marginTop: 60},
   emptyIcon: {fontSize: 48},
-  emptyText: {fontSize: 16, color: '#fff', marginTop: 12, fontWeight: 'bold'},
-  emptySubText: {fontSize: 13, color: '#A0AEC0', marginTop: 4},
+  emptyText: {fontSize: 16, color: '#fff', marginTop: 12, fontFamily: 'SpaceGrotesk', fontWeight: 'bold'},
+  emptySubText: {fontSize: 13, color: '#C5C6C7', marginTop: 4},
   threatCard: {
-    backgroundColor: '#16213E', borderRadius: 12, padding: 14,
+    backgroundColor: '#1C1D24', borderRadius: 12, padding: 14,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: 8, borderWidth: 1, borderColor: '#E6394620',
+    marginBottom: 8, borderWidth: 1, borderColor: '#FF2A2A20',
   },
   threatLeft: {flexDirection: 'row', alignItems: 'center'},
   threatAppIcon: {fontSize: 24, marginRight: 12},
-  threatApp: {fontSize: 14, fontWeight: '600', color: '#fff'},
-  threatTime: {fontSize: 11, color: '#A0AEC0', marginTop: 2},
+  threatApp: {fontSize: 14, fontFamily: 'SpaceGrotesk', fontWeight: '600', color: '#fff'},
+  threatTime: {fontSize: 11, color: '#C5C6C7', marginTop: 2},
   rightCol: {alignItems: 'flex-end', gap: 4},
   messageCard: {
-    backgroundColor: '#16213E',
+    backgroundColor: '#1C1D24',
     borderRadius: 12,
     padding: 14,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#2D3748',
+    borderColor: '#C5C6C750',
   },
   messageHead: {
     flexDirection: 'row',
@@ -357,12 +357,12 @@ const styles = StyleSheet.create({
   messageChipText: {
     color: '#D6E4FF',
     fontSize: 10,
-    fontWeight: '700',
+    fontFamily: 'SpaceGrotesk', fontWeight: '700',
   },
   messageTitle: {
     color: '#fff',
     fontSize: 13,
-    fontWeight: '700',
+    fontFamily: 'SpaceGrotesk', fontWeight: '700',
     marginBottom: 6,
   },
   messageBody: {
@@ -371,29 +371,29 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   threatBadge: {
-    backgroundColor: '#E6394620', borderRadius: 6,
+    backgroundColor: '#FF2A2A20', borderRadius: 6,
     paddingHorizontal: 8, paddingVertical: 4,
-    borderWidth: 1, borderColor: '#E63946',
+    borderWidth: 1, borderColor: '#FF2A2A',
   },
-  threatBadgeText: {fontSize: 10, color: '#E63946', fontWeight: 'bold'},
-  status: {fontSize: 10, fontWeight: 'bold'},
-  blocked: {color: '#E63946'},
+  threatBadgeText: {fontSize: 10, color: '#FF2A2A', fontFamily: 'SpaceGrotesk', fontWeight: 'bold'},
+  status: {fontSize: 10, fontFamily: 'SpaceGrotesk', fontWeight: 'bold'},
+  blocked: {color: '#FF2A2A'},
   allowed: {color: '#F6AD55'},
   dangerButton: {
     marginTop: 8, backgroundColor: '#2D0D0D', borderRadius: 12,
-    padding: 16, alignItems: 'center', borderWidth: 1, borderColor: '#E63946',
+    padding: 16, alignItems: 'center', borderWidth: 1, borderColor: '#FF2A2A',
     marginBottom: 8,
   },
-  dangerText: {fontSize: 14, color: '#E63946', fontWeight: 'bold'},
+  dangerText: {fontSize: 14, color: '#FF2A2A', fontFamily: 'SpaceGrotesk', fontWeight: 'bold'},
   bottomNav: {
-    flexDirection: 'row', backgroundColor: '#1A1A2E',
-    borderTopWidth: 1, borderTopColor: '#2D3748',
+    flexDirection: 'row', backgroundColor: '#0B0C10',
+    borderTopWidth: 1, borderTopColor: '#C5C6C750',
     paddingBottom: 20, paddingTop: 10,
   },
   navItem: {flex: 1, alignItems: 'center'},
   navIcon: {fontSize: 22},
-  navLabel: {fontSize: 11, color: '#A0AEC0', marginTop: 4},
-  navLabelActive: {color: '#E63946', fontWeight: 'bold'},
+  navLabel: {fontSize: 11, color: '#C5C6C7', marginTop: 4},
+  navLabelActive: {color: '#FF2A2A', fontFamily: 'SpaceGrotesk', fontWeight: 'bold'},
 });
 
 export default HistoryScreen;

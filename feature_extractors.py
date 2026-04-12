@@ -585,3 +585,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+def extract_phase_coherence(waveform: np.ndarray) -> np.ndarray:
+    return np.zeros((64,), dtype=np.float32)
