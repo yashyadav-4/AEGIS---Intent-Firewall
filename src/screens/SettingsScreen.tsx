@@ -13,6 +13,7 @@ import {
   isCallProtectionRunning,
 } from '../utils/permissionManager';
 import {getSettings, saveSettings, clearThreats} from '../utils/storage';
+import {CallProtectionManager} from '../utils/callProtectionManager';
 
 const SettingsScreen = () => {
   const navigation = useNavigation();
@@ -31,12 +32,15 @@ const SettingsScreen = () => {
   const [vibration, setVibration] = useState(true);
   const [strictMode, setStrictMode] = useState(false);
   const [callProtectionRunning, setCallProtectionRunning] = useState(false);
+  const [callScreeningHeld, setCallScreeningHeld] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadPermissions = async () => {
     try {
       const status = await getAllPermissionStatus();
       setPermissions(status);
+      const screeningHeld = await CallProtectionManager.isCallScreeningRoleHeld();
+      setCallScreeningHeld(screeningHeld);
       const running = await isCallProtectionRunning();
       setCallProtectionRunning(running);
     } catch (error) {
@@ -143,6 +147,22 @@ const SettingsScreen = () => {
     const running = await isCallProtectionRunning();
     setCallProtectionRunning(running);
     Alert.alert('Call protection stopped', 'Live call monitoring is OFF.');
+  };
+
+  const handleEnableCallScreening = async () => {
+    const result = await CallProtectionManager.requestCallScreeningRole();
+    if (result === 'already_held') {
+      setCallScreeningHeld(true);
+      Alert.alert('Call screening active', 'Scam calls can now be screened before they ring.');
+      return;
+    }
+
+    if (result === 'requested') {
+      Alert.alert('Action required', 'Approve the Android role prompt, then return to this screen.');
+      return;
+    }
+
+    Alert.alert('Unavailable', 'Call screening role is not available on this device.');
   };
 
   const statusChip = (granted: boolean) => (
@@ -259,6 +279,25 @@ const SettingsScreen = () => {
         </TouchableOpacity>
 
         <Text style={styles.sectionTitle}>CALL PROTECTION</Text>
+        <View style={styles.permissionCardBox}>
+          <View style={styles.permissionRow}>
+            <Text style={styles.permissionLabel}>Call Screening</Text>
+            {statusChip(callScreeningHeld)}
+          </View>
+          <Text style={styles.permissionHint}>
+            {callScreeningHeld
+              ? 'Active - scam calls can be blocked before they ring.'
+              : 'Grant call screening role to block high-risk calls pre-answer.'}
+          </Text>
+          {!callScreeningHeld && (
+            <TouchableOpacity
+              style={[styles.actionButtonSecondary, {marginTop: 12, marginBottom: 0}]}
+              onPress={handleEnableCallScreening}>
+              <Text style={styles.actionTextSecondary}>Enable Call Screening</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
         <View style={styles.permissionCardBox}>
           <View style={styles.permissionRow}>
             <Text style={styles.permissionLabel}>Live Call Monitor</Text>

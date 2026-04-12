@@ -4,6 +4,7 @@ import com.facebook.react.bridge.*
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.os.Build
 import android.provider.Settings
+import android.content.Context
 import android.content.Intent
 import android.app.role.RoleManager
 import android.content.ComponentName
@@ -107,7 +108,8 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
     fun checkAccessibilityServiceEnabled(promise: Promise) {
         try {
             val context = reactApplicationContext
-            val expectedClass = ScamAccessibilityService::class.java.name
+            val openChatClass = OpenChatAccessibilityService::class.java.name
+            val scamClass = ScamAccessibilityService::class.java.name
             // Primary: secure settings parsing is usually most stable across OEM builds.
             val enabled = Settings.Secure.getInt(
                 context.contentResolver,
@@ -125,9 +127,13 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
             ) ?: ""
 
-            val fullName = ComponentName(context, ScamAccessibilityService::class.java)
+            val openChatFull = ComponentName(context, OpenChatAccessibilityService::class.java)
                 .flattenToString()
-            val shortName = ComponentName(context, ScamAccessibilityService::class.java)
+            val openChatShort = ComponentName(context, OpenChatAccessibilityService::class.java)
+                .flattenToShortString()
+            val scamFull = ComponentName(context, ScamAccessibilityService::class.java)
+                .flattenToString()
+            val scamShort = ComponentName(context, ScamAccessibilityService::class.java)
                 .flattenToShortString()
 
             val splitter = TextUtils.SimpleStringSplitter(':')
@@ -135,8 +141,10 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
             while (splitter.hasNext()) {
                 val service = splitter.next()
                 if (
-                    service.equals(fullName, ignoreCase = true) ||
-                    service.equals(shortName, ignoreCase = true)
+                    service.equals(openChatFull, ignoreCase = true) ||
+                    service.equals(openChatShort, ignoreCase = true) ||
+                    service.equals(scamFull, ignoreCase = true) ||
+                    service.equals(scamShort, ignoreCase = true)
                 ) {
                     promise.resolve(true)
                     return
@@ -154,7 +162,9 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
                     val info = service.resolveInfo?.serviceInfo ?: continue
                     val serviceName = info.name
                     val matchesClass =
-                        serviceName == expectedClass ||
+                        serviceName == openChatClass ||
+                            serviceName == ".${OpenChatAccessibilityService::class.java.simpleName}" ||
+                            serviceName == scamClass ||
                             serviceName == ".${ScamAccessibilityService::class.java.simpleName}"
 
                     if (info.packageName == context.packageName && matchesClass) {
@@ -175,7 +185,7 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
     fun promptAccessibilityServiceSetup(promise: Promise) {
         try {
             val context = reactApplicationContext
-            val component = ComponentName(context, ScamAccessibilityService::class.java)
+            val component = ComponentName(context, OpenChatAccessibilityService::class.java)
 
             val detailsIntent = Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS").apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -221,6 +231,87 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
             }
         }
         promise.resolve(true)
+    }
+
+    @ReactMethod
+    fun requestCallScreeningRole(promise: Promise) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val roleManager = reactApplicationContext
+                    .getSystemService(Context.ROLE_SERVICE) as RoleManager
+                val roleName = RoleManager.ROLE_CALL_SCREENING
+
+                if (roleManager.isRoleHeld(roleName)) {
+                    promise.resolve("already_held")
+                    return
+                }
+
+                if (!roleManager.isRoleAvailable(roleName)) {
+                    promise.resolve("unavailable")
+                    return
+                }
+
+                val activity = getCurrentActivity()
+                if (activity == null) {
+                    promise.reject("NO_ACTIVITY", "Current activity is null")
+                    return
+                }
+
+                val intent = roleManager.createRequestRoleIntent(roleName)
+                activity.startActivityForResult(intent, CALL_SCREENING_ROLE_REQUEST_CODE)
+                promise.resolve("requested")
+            } else {
+                promise.resolve("unavailable")
+            }
+        } catch (e: Exception) {
+            promise.reject("ERROR", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun isCallScreeningRoleHeld(promise: Promise) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val roleManager = reactApplicationContext
+                    .getSystemService(Context.ROLE_SERVICE) as RoleManager
+                promise.resolve(roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING))
+            } else {
+                promise.resolve(false)
+            }
+        } catch (_: Exception) {
+            promise.resolve(false)
+        }
+    }
+
+    @ReactMethod
+    fun startCallAudioMonitor(callerNumber: String, promise: Promise) {
+        try {
+            val intent = Intent(reactApplicationContext, CallAudioMonitorService::class.java).apply {
+                action = CallAudioMonitorService.ACTION_START
+                putExtra(CallAudioMonitorService.EXTRA_CALLER_NUMBER, callerNumber)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                reactApplicationContext.startForegroundService(intent)
+            } else {
+                reactApplicationContext.startService(intent)
+            }
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("ERROR", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun stopCallAudioMonitor(promise: Promise) {
+        try {
+            val intent = Intent(reactApplicationContext, CallAudioMonitorService::class.java).apply {
+                action = CallAudioMonitorService.ACTION_STOP
+            }
+            reactApplicationContext.startService(intent)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("ERROR", e.message)
+        }
     }
 
     @ReactMethod
@@ -288,8 +379,14 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
 
             CallProtectionPrefs.setArmed(context, true)
 
-            val intent = Intent(context, AegisCallMonitor::class.java).apply {
-                action = AegisCallMonitor.ACTION_START
+            // Stop legacy monitor path to ensure websocket call monitor is the active engine.
+            context.startService(Intent(context, AegisCallMonitor::class.java).apply {
+                action = AegisCallMonitor.ACTION_STOP
+            })
+
+            val intent = Intent(context, CallAudioMonitorService::class.java).apply {
+                action = CallAudioMonitorService.ACTION_START
+                putExtra(CallAudioMonitorService.EXTRA_CALLER_NUMBER, "unknown")
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -313,10 +410,12 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
         try {
             val context = reactApplicationContext
             CallProtectionPrefs.setArmed(context, false)
-            val intent = Intent(context, AegisCallMonitor::class.java).apply {
+            context.startService(Intent(context, CallAudioMonitorService::class.java).apply {
+                action = CallAudioMonitorService.ACTION_STOP
+            })
+            context.startService(Intent(context, AegisCallMonitor::class.java).apply {
                 action = AegisCallMonitor.ACTION_STOP
-            }
-            context.startService(intent)
+            })
             promise.resolve(true)
         } catch (e: Exception) {
             Log.e("AegisDetectionModule", "Failed to stop call protection", e)
@@ -326,7 +425,7 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
 
     @ReactMethod
     fun isCallProtectionRunning(promise: Promise) {
-        promise.resolve(AegisCallMonitor.isServiceRunning)
+        promise.resolve(CallAudioMonitorService.isServiceRunning)
     }
 
     @ReactMethod
@@ -457,11 +556,11 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
             val overlayGranted = Settings.canDrawOverlays(context)
 
             val out = Arguments.createMap().apply {
-                putBoolean("callProtectionRunning", AegisCallMonitor.isServiceRunning)
+                putBoolean("callProtectionRunning", CallAudioMonitorService.isServiceRunning)
                 putBoolean("callProtectionArmed", CallProtectionPrefs.isArmed(context))
-                putBoolean("callMonitorArmed", AegisCallMonitor.monitorArmed)
-                putBoolean("inCallDetected", AegisCallMonitor.inCallDetected)
-                putBoolean("audioCaptureRunning", AegisCallMonitor.audioCaptureRunning)
+                putBoolean("callMonitorArmed", CallProtectionPrefs.isArmed(context))
+                putBoolean("inCallDetected", CallAudioMonitorService.isAudioCaptureRunning)
+                putBoolean("audioCaptureRunning", CallAudioMonitorService.isAudioCaptureRunning)
                 putBoolean("defaultDialerEnabled", defaultDialer)
                 putBoolean("overlayPermissionGranted", overlayGranted)
                 putBoolean("floatingButtonEnabled", CallProtectionPrefs.isFloatingEnabled(context))
@@ -474,10 +573,15 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
                 putDouble("lastNotificationEventAt", snapshot.lastNotificationEventAt.toDouble())
                 putDouble("lastAccessibilityEventAt", snapshot.lastAccessibilityEventAt.toDouble())
                 putDouble("lastSmsFallbackEventAt", snapshot.lastSmsFallbackEventAt.toDouble())
-                putString("lastCaptureStatus", AegisCallMonitor.lastCaptureStatus)
-                putDouble("lastCaptureAtMs", AegisCallMonitor.lastCaptureAtMs.toDouble())
-                putString("lastTier3Status", AegisCallMonitor.lastTier3Status)
-                putDouble("lastTier3AtMs", AegisCallMonitor.lastTier3AtMs.toDouble())
+                putString("lastCaptureStatus", if (CallAudioMonitorService.isAudioCaptureRunning) "capturing" else "idle")
+                putDouble("lastCaptureAtMs", System.currentTimeMillis().toDouble())
+                putString("lastTier3Status", if (CallAudioMonitorService.isServiceRunning) "websocket-monitor-armed" else "stopped")
+                putDouble("lastTier3AtMs", System.currentTimeMillis().toDouble())
+                putDouble("geminiChunksSent", CallAudioMonitorService.totalGeminiChunksSent.toDouble())
+                putDouble("geminiResponses", CallAudioMonitorService.totalGeminiResponses.toDouble())
+                putDouble("lastGeminiChunkAtMs", CallAudioMonitorService.lastGeminiChunkAtMs.toDouble())
+                putDouble("lastGeminiResponseAtMs", CallAudioMonitorService.lastGeminiResponseAtMs.toDouble())
+                putString("lastGeminiStatus", CallAudioMonitorService.lastGeminiStatus)
                 putBoolean("tier3ApiKeyConfigured", hasApiKey)
                 putString("tier3TextModel", BuildConfig.GEMINI_MODEL)
                 putString("tier3VoiceModel", BuildConfig.GEMINI_VOICE_MODEL)
@@ -550,5 +654,9 @@ class AegisDetectionModule(reactContext: ReactApplicationContext) : ReactContext
             Log.e("AegisDetectionModule", "Failed to drain buffered notifications JSON", e)
             promise.resolve(JSONArray().toString())
         }
+    }
+
+    companion object {
+        const val CALL_SCREENING_ROLE_REQUEST_CODE = 1001
     }
 }

@@ -54,13 +54,66 @@ const HomeScreen = () => {
     const eventEmitter = new NativeEventEmitter();
     const subscription = eventEmitter.addListener('onNotification', async data => {
       const settings = await getSettings();
-      if (!settings.messageProtection) return;
+      const isCallSource = data?.source === 'call';
+      if (isCallSource && !settings.callProtection) return;
+      if (!isCallSource && !settings.messageProtection) return;
+
+      if (isCallSource) {
+        const callType = String(data?.type ?? 'call_event');
+        const riskScore = Number.isFinite(data?.riskScore) ? Number(data.riskScore) : 0;
+        const shouldStoreCallThreat =
+          callType === 'call_blocked' ||
+          callType === 'call_suspicious' ||
+          callType === 'call_scam_alert';
+
+        if (!shouldStoreCallThreat) {
+          return;
+        }
+
+        const message = String(data?.reason || data?.message || 'Call risk event');
+        const confidence = Math.max(0, Math.min(100, riskScore));
+        const category = callType.toUpperCase();
+        const blocked = callType === 'call_blocked' || settings.autoBlock;
+
+        const savedThreat = await saveThreat({
+          app: 'Phone Call',
+          appIcon: APP_ICONS['Phone Call'],
+          message,
+          category,
+          confidence,
+          blocked,
+          time: 'Just now',
+        });
+
+        loadRecentThreats();
+
+        if (!settings.autoBlock) {
+          navigation.navigate('Warning', {
+            category,
+            confidence,
+            message,
+            app: 'Phone Call',
+            threatId: savedThreat?.id,
+          });
+        }
+        return;
+      }
+
+      const rawText = String(data?.text ?? '');
+      const normalizedText = rawText.toLowerCase().replace(/\s+/g, ' ').trim();
+      const looksLikeCallStatus =
+        data?.matchedCategory === 'CALL_STATUS' ||
+        /(calling(\.\.\.|…)?|ringing(\.\.\.|…)?|ongoing voice call|on a call|voice call|video call|missed call|call ended|declined|connected|on hold)/i.test(normalizedText);
+
+      if (looksLikeCallStatus && data?.flagged !== true) {
+        return;
+      }
 
       // Use native Tier 1 signal if available, fall back to JS detector
       const nativeFlagged: boolean = data.flagged === true;
       const nativeCategory: string = data.matchedCategory || '';
 
-      const jsResult = detectScam(data.text);
+      const jsResult = detectScam(rawText);
 
       // Combine: native flag OR JS detector triggers warning
       const isScam = nativeFlagged || jsResult.isScam;
@@ -78,7 +131,7 @@ const HomeScreen = () => {
         const savedThreat = await saveThreat({
           app: data.appName,
           appIcon: APP_ICONS[data.appName] || '📩',
-          message: data.text,
+          message: rawText,
           category,
           confidence,
           blocked: settings.autoBlock,
@@ -91,7 +144,7 @@ const HomeScreen = () => {
           navigation.navigate('Warning', {
             category,
             confidence,
-            message: data.text,
+            message: rawText,
             app: data.appName,
             threatId: savedThreat?.id,
           });

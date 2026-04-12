@@ -104,49 +104,27 @@ class ScamPipeline(
                 result
             }
             ScoreTier.LOW -> {
-                val t3 = try {
-                    tier3GeminiClient.analyze(text, context, t1)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Tier3 failed for LOW: ${e.message}")
-                    null
-                }
-
-                val result = if (t3 == null) {
-                    PipelineResult(
-                        decision = Decision.SAFE,
-                        tier = 1,
-                        category = null,
-                        confidenceScore = t1.score,
-                        evidence = emptyList(),
-                        usedTier3 = true,
-                    )
-                } else {
-                    mapTier3ToResult(t3, usedTier3 = true)
-                }
+                val result = PipelineResult(
+                    decision = Decision.SAFE,
+                    tier = 1,
+                    category = null,
+                    confidenceScore = t1.score,
+                    evidence = t1.evidencePhrases,
+                    usedTier3 = false,
+                )
 
                 DecisionTraceLogger.log(result, text, packageName)
                 result
             }
             ScoreTier.SAFE -> {
-                val t3 = try {
-                    tier3GeminiClient.analyze(text, context, t1)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Tier3 failed for SAFE: ${e.message}")
-                    null
-                }
-
-                val result = if (t3 == null) {
-                    PipelineResult(
-                        decision = Decision.SAFE,
-                        tier = 1,
-                        category = null,
-                        confidenceScore = t1.score,
-                        evidence = emptyList(),
-                        usedTier3 = true,
-                    )
-                } else {
-                    mapTier3ToResult(t3, usedTier3 = true)
-                }
+                val result = PipelineResult(
+                    decision = Decision.SAFE,
+                    tier = 1,
+                    category = null,
+                    confidenceScore = t1.score,
+                    evidence = emptyList(),
+                    usedTier3 = false,
+                )
                 DecisionTraceLogger.log(result, text, packageName)
                 result
             }

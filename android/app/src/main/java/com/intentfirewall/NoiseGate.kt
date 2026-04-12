@@ -33,6 +33,11 @@ object NoiseGate {
         if (words.size > 8) return false
         if (containsScamKeyword(normalized)) return false
 
+        // Drop short text fragments (often partial accessibility captures)
+        // unless we already saw a direct scam keyword hit above.
+        if (words.size <= 2 && normalized.length <= 12) return true
+        if (words.size <= 3 && normalized.length <= 9) return true
+
         if (normalized.length < 4) return true
         if (Regex("^[\\p{So}\\s]+$").matches(normalized)) return true
         if (Regex("^\\d{1,2}:\\d{2}\\s?(am|pm)?$", RegexOption.IGNORE_CASE).matches(normalized)) return true

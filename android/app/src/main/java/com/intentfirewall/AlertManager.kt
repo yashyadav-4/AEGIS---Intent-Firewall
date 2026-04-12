@@ -57,6 +57,22 @@ object AlertManager {
         tier3Used: Boolean,
         decision: Decision = Decision.ALERT,
     ) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            handler.post {
+                showAlert(
+                    context = context,
+                    appName = appName,
+                    categoryDisplayName = categoryDisplayName,
+                    evidencePhrases = evidencePhrases,
+                    confidenceScore = confidenceScore,
+                    tier = tier,
+                    tier3Used = tier3Used,
+                    decision = decision,
+                )
+            }
+            return
+        }
+
         if (!Settings.canDrawOverlays(context)) {
             Log.w(TAG, "Overlay permission missing; fallback notification path should handle alert")
             return
@@ -168,6 +184,11 @@ object AlertManager {
 
     /** Dismiss currently visible overlay and clear pending callbacks. */
     fun dismissOverlay() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            handler.post { dismissOverlay() }
+            return
+        }
+
         handler.removeCallbacks(autoDismiss)
         val wm = windowManager
         val view = currentView

@@ -2,12 +2,14 @@ package com.intentfirewall
 
 import android.app.Notification
 import android.content.ComponentName
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.telephony.TelephonyManager
 import android.util.Log
 
 class NotificationService : NotificationListenerService() {
@@ -121,6 +123,37 @@ class NotificationService : NotificationListenerService() {
             }
 
             val appName = getAppName(packageName)
+
+            if (isCallStateNotification(packageName, title, extractedText)) {
+                val callStateText = extractedText.ifBlank { title }
+                if (!MessageConsistencyCoordinator.shouldProcessNotification(packageName, "call_state:$callStateText")) {
+                    return
+                }
+
+                NotificationEventEmitter.sendNotification(
+                    context = applicationContext,
+                    appName = appName,
+                    title = title.ifBlank { appName },
+                    text = callStateText,
+                    packageName = packageName,
+                    flagged = false,
+                    matchedCategory = "CALL_STATUS",
+                    conversationContext = "",
+                    confidence = 0.0f,
+                    sender = title.ifBlank { appName },
+                    appSource = appName,
+                    captureMethod = "notification_call_state",
+                    eventTimestamp = eventTimestamp,
+                )
+
+                Log.d(
+                    "IntentFirewall|NotifService",
+                    "Skipped scam pipeline for call status package=$packageName text=$callStateText"
+                )
+
+                dispatchCallStateHintFromNotification(packageName, title, callStateText)
+                return
+            }
 
             Log.d(
                 "IntentFirewall",
@@ -300,5 +333,126 @@ class NotificationService : NotificationListenerService() {
             "com.android.shell" -> "System"
             else -> "System"
         }
+    }
+
+    private fun isCallStateNotification(packageName: String, title: String, text: String): Boolean {
+        if (
+            packageName != "com.whatsapp" &&
+            packageName != "com.whatsapp.w4b" &&
+            packageName != "org.telegram.messenger" &&
+            packageName != "com.truecaller"
+        ) {
+            return false
+        }
+
+        val normalized = "$title $text"
+            .lowercase()
+            .replace("\\s+".toRegex(), " ")
+            .trim()
+        if (normalized.isBlank()) return false
+
+        val callMarkers = listOf(
+            "calling",
+            "calling...",
+            "calling…",
+            "ringing",
+            "ringing...",
+            "ringing…",
+            "ongoing voice call",
+            "voice call",
+            "video call",
+            "on a call",
+            "missed call",
+            "call ended",
+            "declined",
+            "connected",
+            "on hold",
+        )
+
+        if (!callMarkers.any { normalized.contains(it) }) return false
+
+        val scamMarkers = listOf(
+            "otp", "kyc", "verify", "account", "bank", "pin", "cvv", "upi",
+            "payment", "refund", "lottery", "gift", "prize", "link", "http", "www"
+        )
+
+        return scamMarkers.none { normalized.contains(it) }
+    }
+
+    private fun dispatchCallStateHintFromNotification(packageName: String, title: String, text: String) {
+        if (!CallProtectionPrefs.isArmed(applicationContext)) return
+
+        val telephonyState = mapCallStatusToTelephonyState(title, text) ?: return
+        val callerLabel = title.ifBlank { "unknown" }
+
+        try {
+            if (!CallAudioMonitorService.isServiceRunning) {
+                val startIntent = Intent(applicationContext, CallAudioMonitorService::class.java).apply {
+                    action = CallAudioMonitorService.ACTION_START
+                    putExtra(CallAudioMonitorService.EXTRA_CALLER_NUMBER, callerLabel)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    applicationContext.startForegroundService(startIntent)
+                } else {
+                    applicationContext.startService(startIntent)
+                }
+            }
+
+            val hintIntent = Intent(applicationContext, CallAudioMonitorService::class.java).apply {
+                action = CallAudioMonitorService.ACTION_HINT_STATE
+                putExtra(CallAudioMonitorService.EXTRA_HINT_STATE, telephonyState)
+                putExtra(CallAudioMonitorService.EXTRA_HINT_SOURCE, "NotificationService:$packageName")
+                putExtra(CallAudioMonitorService.EXTRA_CALLER_NUMBER, callerLabel)
+            }
+            applicationContext.startService(hintIntent)
+        } catch (e: Exception) {
+            Log.w(
+                "IntentFirewall|NotifService",
+                "Failed to dispatch call-state hint from notification package=$packageName",
+                e
+            )
+        }
+    }
+
+    private fun mapCallStatusToTelephonyState(title: String, text: String): Int? {
+        val normalized = "$title $text"
+            .lowercase()
+            .replace("\\s+".toRegex(), " ")
+            .trim()
+        if (normalized.isBlank()) return null
+
+        val endedMarkers = listOf(
+            "missed call",
+            "call ended",
+            "declined",
+            "busy",
+            "not answered",
+        )
+        if (endedMarkers.any { normalized.contains(it) }) {
+            return TelephonyManager.CALL_STATE_IDLE
+        }
+
+        val activeMarkers = listOf(
+            "ongoing voice call",
+            "on a call",
+            "connected",
+            "voice call",
+            "video call",
+            "in call",
+        )
+        if (activeMarkers.any { normalized.contains(it) }) {
+            return TelephonyManager.CALL_STATE_OFFHOOK
+        }
+
+        val ringingMarkers = listOf(
+            "ringing",
+            "calling",
+            "incoming call",
+        )
+        if (ringingMarkers.any { normalized.contains(it) }) {
+            return TelephonyManager.CALL_STATE_RINGING
+        }
+
+        return null
     }
 }

@@ -1,6 +1,8 @@
 package com.intentfirewall
 
 import android.content.Context
+import android.os.Bundle
+import android.util.Log
 import com.facebook.react.ReactApplication
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.modules.core.DeviceEventManagerModule
@@ -97,6 +99,82 @@ object NotificationEventEmitter {
 
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+
+    fun sendCallEvent(context: Context, data: Bundle) {
+        try {
+            val emittedAt = System.currentTimeMillis()
+            val type = data.getString("type", "call_event")
+            val number = data.getString("number", "unknown")
+            val riskScore = data.getInt("riskScore", 0).coerceIn(0, 100)
+            val reason = data.getString("reason", "")
+            val captureMethod = data.getString("captureMethod", "call")
+            val tierUsed = data.getString("tierUsed", "call")
+            val message = data.getString("message", "")
+
+            bufferEvent(
+                context = context,
+                appName = "Phone Call",
+                title = "Call Risk Alert",
+                text = if (reason.isNotBlank()) reason else message,
+                packageName = "phone",
+                flagged = riskScore >= 55,
+                matchedCategory = type,
+                conversationContext = "call:$number",
+                confidence = riskScore / 100.0f,
+                emittedAt = emittedAt,
+                sender = number,
+                appSource = "Phone Call",
+                captureMethod = captureMethod,
+                tierUsed = tierUsed,
+                tier1Score = 0.0f,
+                tier1Decision = "ALLOW",
+                tier1Category = "NONE",
+                tier3Reason = reason,
+                tier3Model = BuildConfig.GEMINI_VOICE_MODEL,
+                tier3KeyIndex = 0,
+            )
+
+            val reactApplication = context.applicationContext as ReactApplication
+            val reactHost = reactApplication.reactHost
+            val reactContext = reactHost?.currentReactContext ?: return
+
+            val params = Arguments.createMap().apply {
+                putString("source", "call")
+                putString("type", type)
+                putString("number", number)
+                putInt("riskScore", riskScore)
+                putString("reason", reason)
+                putString("captureMethod", captureMethod)
+                putString("tierUsed", tierUsed)
+                putString("message", message)
+                putDouble("timestamp", emittedAt.toDouble())
+
+                // Existing event shape fields for current JS listeners.
+                putString("appName", "Phone Call")
+                putString("title", "Call Risk Alert")
+                putString("text", if (reason.isNotBlank()) reason else message)
+                putString("packageName", "phone")
+                putBoolean("flagged", riskScore >= 55)
+                putString("matchedCategory", type)
+                putString("context", "call:$number")
+                putDouble("confidence", riskScore.toDouble())
+                putString("sender", number)
+                putString("appSource", "Phone Call")
+                putDouble("tier1Score", 0.0)
+                putString("tier1Decision", "ALLOW")
+                putString("tier1Category", "NONE")
+                putString("tier3Reason", reason)
+                putString("tier3Model", BuildConfig.GEMINI_VOICE_MODEL)
+                putInt("tier3KeyIndex", 0)
+            }
+
+            reactContext
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                .emit("onNotification", params)
+        } catch (e: Exception) {
+            Log.e("NotificationEventEmitter", "Failed to emit call event", e)
         }
     }
 
