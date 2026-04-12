@@ -32,6 +32,8 @@ import kotlin.math.sqrt
 private const val SAMPLE_RATE = 16000
 private const val WAVEFORM_SIZE = 32000
 private const val FLAT_PITCH_THRESHOLD = 0.15f
+private const val ENSEMBLE_FLAT_ZONE_EPS = 0.008f
+private const val FALLBACK_SYNTHETIC_THRESHOLD = 0.55f
 
 data class ScalerParams(
     val mean: FloatArray,
@@ -202,23 +204,79 @@ class AegisAudioDetector(private val context: Context) {
         // Linear probe: 128-dim -> single score
         val wavlmScore = runInt8SingleOutput(wavlmInterpreter, wavlmScaled)
 
-        val fusionInput = floatArrayOf(
-            phaseScore, glottalScore, wavlmScore,
-            phaseScore * glottalScore,
-            phaseScore * wavlmScore,
-            glottalScore * wavlmScore
-        )
-        val finalScore = runInt8SingleOutput(ensembleInterpreter, fusionInput)
+        val ensembleScore = runEnsembleOutput(phaseScore, glottalScore, wavlmScore)
+        val fallbackScore = computeFallbackFusionScore(phaseScore, glottalScore, wavlmScore)
+        val useFallback = abs(ensembleScore - 0.5f) <= ENSEMBLE_FLAT_ZONE_EPS
+        val finalScore = if (useFallback) fallbackScore else ensembleScore
+        val threshold = if (useFallback) FALLBACK_SYNTHETIC_THRESHOLD else 0.5f
 
         val latencyMs = (SystemClock.elapsedRealtimeNanos() - t0) / 1_000_000L
         return DetectionResult(
-            isSynthetic = finalScore > 0.5f,
+            isSynthetic = finalScore >= threshold,
             confidence = finalScore,
             phaseScore = phaseScore,
             glottalScore = glottalScore,
             wavlmScore = wavlmScore,
             latencyMs = latencyMs
         )
+    }
+
+    private fun runEnsembleOutput(phaseScore: Float, glottalScore: Float, wavlmScore: Float): Float {
+        val inputCount = ensembleInterpreter.inputTensorCount
+
+        // Preferred path for current exported ensemble model: 3 scalar inputs.
+        if (inputCount == 3) {
+            val inputScores = floatArrayOf(phaseScore, glottalScore, wavlmScore)
+            val inputBuffers = Array<Any>(inputCount) { i ->
+                val inputTensor = ensembleInterpreter.getInputTensor(i)
+                val inScale = quantScale(inputTensor)
+                val inZero = quantZeroPoint(inputTensor)
+                val q = (inputScores[i] / inScale + inZero).roundToInt().coerceIn(-128, 127).toByte()
+                ByteBuffer.allocateDirect(1).order(ByteOrder.nativeOrder()).apply {
+                    put(q)
+                    rewind()
+                }
+            }
+
+            val outputTensor = ensembleInterpreter.getOutputTensor(0)
+            val outScale = quantScale(outputTensor)
+            val outZero = quantZeroPoint(outputTensor)
+            val outputBuffer = ByteBuffer.allocateDirect(1).order(ByteOrder.nativeOrder())
+            val outputs = hashMapOf(0 to outputBuffer as Any)
+
+            ensembleInterpreter.runForMultipleInputsOutputs(inputBuffers, outputs)
+
+            val rawOutput = ByteArray(1)
+            outputBuffer.rewind()
+            outputBuffer.get(rawOutput)
+            return dequantize(rawOutput, outScale, outZero)
+        }
+
+        // Backward-compatible path for any single-input ensemble export.
+        val fusionInput = floatArrayOf(
+            phaseScore,
+            glottalScore,
+            wavlmScore,
+            phaseScore * glottalScore,
+            phaseScore * wavlmScore,
+            glottalScore * wavlmScore
+        )
+        return runInt8SingleOutput(ensembleInterpreter, fusionInput)
+    }
+
+    private fun computeFallbackFusionScore(phaseScore: Float, glottalScore: Float, wavlmScore: Float): Float {
+        // If ensemble saturates around 0.5 due quantization/calibration drift,
+        // use a conservative weighted fusion that favors WavLM + phase consistency.
+        var score = 0.6f * wavlmScore + 0.3f * phaseScore + 0.1f * glottalScore
+
+        if (phaseScore >= 0.55f && wavlmScore >= 0.52f) {
+            score += 0.05f
+        }
+        if (phaseScore < 0.5f && glottalScore < 0.35f && wavlmScore < 0.55f) {
+            score -= 0.04f
+        }
+
+        return score.coerceIn(0f, 1f)
     }
 
     /**

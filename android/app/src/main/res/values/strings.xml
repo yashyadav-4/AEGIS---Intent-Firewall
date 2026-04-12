@@ -1,3 +1,29 @@
 <resources>
     <string name="app_name">IntentFirewall V2</string>
+    <string name="accessibility_open_chat_label">IntentFirewall Open Chat Access</string>
+    <string name="accessibility_scam_guard_label">IntentFirewall Scam Guard Access</string>
+    <string name="accessibility_service_description">Accessibility is used to read supported chat and call text for scam detection alerts.</string>
+    <string name="scam_detection_channel_name">Scam Protection</string>
+    <string name="scam_detection_channel_desc">Persistent protection status for scam detection services.</string>
+    <string name="protection_active_title">Protection Active</string>
+    <string name="protection_active_body">Scam detection is running in background.</string>
+
+    <string name="health_channel_name">Protection Health Alerts</string>
+    <string name="health_channel_desc">Alerts when scam protection becomes stale or paused.</string>
+    <string name="health_paused_title">Scam Protection Paused - Tap to fix</string>
+    <string name="health_paused_body">Background restrictions or permissions paused protection.</string>
+
+    <string name="oem_guide_title">Battery and Overlay Setup</string>
+    <string name="oem_guide_open_settings">Open OEM Settings</string>
+    <string name="oem_guide_done">Done, check again</string>
+    <string name="oem_guide_skip">Skip for now</string>
+    <string name="oem_guide_screenshot_placeholder">Screenshot placeholder for %1$s settings screen</string>
+
+    <string name="oem_steps_xiaomi">English: Open Security app -&gt; Autostart -&gt; enable this app. Then Battery Saver -&gt; No restrictions.\nHindi: Security app kholo -&gt; Autostart me app ON karo. Phir Battery Saver me No restrictions select karo.</string>
+    <string name="oem_steps_oppo">English: Open Phone Manager -&gt; Auto Launch -&gt; allow app. Disable battery optimization for this app.\nHindi: Phone Manager kholo -&gt; Auto Launch me app allow karo. Battery optimization band karo.</string>
+    <string name="oem_steps_vivo">English: Open iManager -&gt; Background app management -&gt; allow this app always.\nHindi: iManager kholo -&gt; Background app management me is app ko always allow karo.</string>
+    <string name="oem_steps_samsung">English: Open Device Care -&gt; Battery -&gt; Background usage limits -&gt; Never sleeping apps add this app.\nHindi: Device Care kholo -&gt; Battery -&gt; Background limits -&gt; Never sleeping apps me is app ko add karo.</string>
+    <string name="oem_steps_huawei">English: Open System Manager -&gt; App launch -&gt; manage manually and allow auto launch, secondary launch, background run.\nHindi: System Manager kholo -&gt; App launch -&gt; manual manage karo aur sab permissions allow karo.</string>
+    <string name="oem_steps_oneplus">English: Open Security -&gt; Battery optimization -&gt; choose Don\'t optimize for this app.\nHindi: Security kholo -&gt; Battery optimization -&gt; is app ke liye Don\'t optimize choose karo.</string>
+    <string name="oem_steps_default">English: Disable battery optimization for this app and allow overlay permission.\nHindi: Is app ke liye battery optimization band karo aur overlay permission allow karo.</string>
 </resources>

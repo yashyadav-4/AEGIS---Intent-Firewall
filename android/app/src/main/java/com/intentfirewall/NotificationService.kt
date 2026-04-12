@@ -1,94 +1,458 @@
 package com.intentfirewall
 
+import android.app.Notification
+import android.content.ComponentName
 import android.content.Intent
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.telephony.TelephonyManager
 import android.util.Log
 
 class NotificationService : NotificationListenerService() {
-    private val tier3 by lazy { Tier3Classifier(applicationContext) }
+    private data class PendingHiddenEvent(
+        val scheduledAt: Long,
+        val runnable: Runnable,
+    )
 
-    override fun onNotificationPosted(sbn: StatusBarNotification) {
-        val packageName = sbn.packageName
-        Log.d("IntentFirewall", "Notification received from: $packageName")
-
-        val extras = sbn.notification.extras
-
-        val title = extras.getString("android.title") ?: ""
-        val text = extras.getCharSequence("android.text")?.toString() ?: ""
-
-        Log.d("IntentFirewall", "Title: $title | Text: $text")
-
-        // Only process relevant apps
-        val trackedApps = listOf(
-            "com.whatsapp",
-            "com.whatsapp.w4b",
-            "org.telegram.messenger",
-            "com.android.mms",
-            "com.google.android.apps.messaging"
-        )
-
-        if (packageName in trackedApps && text.isNotEmpty()) {
-            val appName = getAppName(packageName)
-            ContextBuffer.addTurn(packageName, "[THEM]", text)
-            val context = ContextBuffer.getContext(packageName)
-
-            // Tier 1 — Regex Sentinel (~0.1ms)
-            val sentinelResult = RegexSentinel.analyze(text)
-
-            // Tier 2 — DistilBERT keyword classifier
-            val tier2Result = Tier2Classifier(applicationContext).analyze(
-                context.ifEmpty { text }
-            )
-
-            // Tier 3 — escalate only if Tier 1 OR Tier 2 flagged
-            val tier3Flagged = if (sentinelResult.flagged || tier2Result.isScam) {
-                // Use Tier 1 sentinel result as proxy feature vector
-                // (real implementation feeds DistilBERT hidden states)
-                val proxyFeatures = FloatArray(768) {
-                    if (sentinelResult.flagged) 0.8f else tier2Result.confidence
-                }
-                val tier3Result = tier3.analyze(proxyFeatures)
-                Log.d("AegisZero", "[T3] score=${tier3Result.confidence} " +
-                      "latency=${tier3Result.latencyMs}ms")
-                tier3Result.isScam
-            } else false
-
-            // Final combined flag
-            val finalFlagged = sentinelResult.flagged || tier2Result.isScam || tier3Flagged
-
-            // Always forward to React Native layer with sentinel result
-            NotificationEventEmitter.sendNotification(
-                applicationContext,
-                appName,
-                title,
-                text,
-                packageName,
-                finalFlagged,
-                when {
-                    tier3Flagged -> "AI_CONFIRMED"
-                    tier2Result.isScam -> tier2Result.label
-                    sentinelResult.flagged -> sentinelResult.matchedCategory ?: ""
-                    else -> ""
-                },
-                context
-            )
-
-            Log.d("AegisZero", "[PIPELINE] ${appName}: " +
-                  "T1=${sentinelResult.flagged} " +
-                  "T2=${tier2Result.isScam}(${tier2Result.confidence}) " +
-                  "T3=$tier3Flagged final=$finalFlagged")
+    private val trackedApps = buildSet {
+        add("com.whatsapp")
+        add("com.whatsapp.w4b")
+        add("org.telegram.messenger")
+        add("com.google.android.gm")
+        add("com.microsoft.office.outlook")
+        add("com.android.mms")
+        add("com.google.android.apps.messaging")
+        add("com.samsung.android.messaging")
+        add("com.truecaller")
+        if (BuildConfig.DEBUG) {
+            // ADB `cmd notification post` originates from this package.
+            add("com.android.shell")
         }
     }
 
-    override fun onNotificationRemoved(sbn: StatusBarNotification) {}
+    private val pipeline by lazy { DetectionPipeline(applicationContext) }
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+    private val pendingHiddenEvents = mutableMapOf<String, PendingHiddenEvent>()
+
+    private val redactionMarkers = listOf(
+        "sensitive notification content hidden",
+        "notification content hidden",
+        "content hidden",
+        "new message",
+        "messages"
+    )
+
+    companion object {
+        private const val UPGRADE_WINDOW_MS = 900L
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        ServiceHealthMonitor.ensureStarted(applicationContext)
+    }
+
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        ServiceHealthMonitor.onNotificationListenerConnected(applicationContext)
+        Log.i("IntentFirewall|NotifService", "NotificationListener connected")
+    }
+
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        ServiceHealthMonitor.onNotificationListenerDisconnected(applicationContext)
+        Log.w("IntentFirewall|NotifService", "NotificationListener disconnected; requesting rebind")
+        requestRebind(ComponentName(applicationContext, NotificationService::class.java))
+    }
+
+    override fun onNotificationPosted(sbn: StatusBarNotification?) {
+        if (sbn == null) return
+
+        try {
+            val packageName = sbn.packageName ?: return
+            if (!trackedApps.contains(packageName)) return
+
+            val extras = sbn.notification.extras
+            val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim().orEmpty()
+            val extractedText = extractBestText(sbn).trim()
+            val looksRedacted = isLikelyRedacted(extractedText)
+            val eventTimestamp = if (sbn.postTime > 0L) sbn.postTime else System.currentTimeMillis()
+            val notificationKey = buildNotificationKey(sbn)
+
+            ServiceHealthMonitor.onNotificationEventCaptured(applicationContext)
+
+            if (extractedText.isBlank() || looksRedacted) {
+                val appName = getAppName(packageName)
+                val fallbackCategory = if (looksRedacted) "HIDDEN_BY_OS" else "NO_PREVIEW"
+                val dedupeKey = "meta:${title.ifBlank { packageName }}:$fallbackCategory"
+
+                if (!MessageConsistencyCoordinator.shouldProcessNotification(packageName, dedupeKey)) {
+                    return
+                }
+
+                NotificationEventEmitter.sendNotification(
+                    context = applicationContext,
+                    appName = appName,
+                    title = title.ifBlank { appName },
+                    text = "",
+                    packageName = packageName,
+                    flagged = false,
+                    matchedCategory = fallbackCategory,
+                    conversationContext = "",
+                    confidence = 0.0f,
+                    sender = title.ifBlank { appName },
+                    appSource = appName,
+                    captureMethod = "notification",
+                    eventTimestamp = eventTimestamp,
+                )
+
+                Log.d(
+                    "IntentFirewall|NotifService",
+                    "Buffered metadata-only notification package=$packageName category=$fallbackCategory"
+                )
+                return
+            }
+
+            cancelPendingHiddenForward(notificationKey)
+
+            if (!MessageConsistencyCoordinator.shouldProcessNotification(packageName, extractedText)) {
+                return
+            }
+
+            val appName = getAppName(packageName)
+
+            if (isCallStateNotification(packageName, title, extractedText)) {
+                val callStateText = extractedText.ifBlank { title }
+                if (!MessageConsistencyCoordinator.shouldProcessNotification(packageName, "call_state:$callStateText")) {
+                    return
+                }
+
+                NotificationEventEmitter.sendNotification(
+                    context = applicationContext,
+                    appName = appName,
+                    title = title.ifBlank { appName },
+                    text = callStateText,
+                    packageName = packageName,
+                    flagged = false,
+                    matchedCategory = "CALL_STATUS",
+                    conversationContext = "",
+                    confidence = 0.0f,
+                    sender = title.ifBlank { appName },
+                    appSource = appName,
+                    captureMethod = "notification_call_state",
+                    eventTimestamp = eventTimestamp,
+                )
+
+                Log.d(
+                    "IntentFirewall|NotifService",
+                    "Skipped scam pipeline for call status package=$packageName text=$callStateText"
+                )
+
+                dispatchCallStateHintFromNotification(packageName, title, callStateText)
+                return
+            }
+
+            Log.d(
+                "IntentFirewall",
+                "SOURCE=NOTIFICATION package=$packageName title=$title text=$extractedText"
+            )
+
+            pipeline.processMessage(
+                appName = appName,
+                packageName = packageName,
+                title = title,
+                text = extractedText,
+                sender = title,
+                appSource = appName,
+                captureMethod = "notification",
+                eventTimestamp = eventTimestamp,
+            )
+        } catch (e: Exception) {
+            Log.e("IntentFirewall|NotifService", "Failed in onNotificationPosted", e)
+        }
+    }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
+        super.onNotificationRemoved(sbn)
+    }
+
+    override fun onDestroy() {
+        synchronized(pendingHiddenEvents) {
+            pendingHiddenEvents.values.forEach { mainHandler.removeCallbacks(it.runnable) }
+            pendingHiddenEvents.clear()
+        }
+        ServiceHealthMonitor.onNotificationListenerDisconnected(applicationContext)
+        super.onDestroy()
+    }
+
+    private fun extractBestText(sbn: StatusBarNotification): String {
+        val extras = sbn.notification.extras
+
+        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
+        if (text.isNotBlank()) return text
+
+        val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString().orEmpty()
+        if (bigText.isNotBlank()) return bigText
+
+        val messagingStyleText = extractMessagingStyleText(extras)
+        if (messagingStyleText.isNotBlank()) return messagingStyleText
+
+        val remoteInputHistory = extras.getCharSequenceArray(Notification.EXTRA_REMOTE_INPUT_HISTORY)
+        if (remoteInputHistory != null && remoteInputHistory.isNotEmpty()) {
+            val joinedHistory = remoteInputHistory
+                .mapNotNull { it?.toString()?.trim() }
+                .filter { it.isNotEmpty() }
+                .joinToString(" ")
+            if (joinedHistory.isNotBlank()) return joinedHistory
+        }
+
+        val lines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+        if (lines != null && lines.isNotEmpty()) {
+            val joined = lines.mapNotNull { it?.toString()?.trim() }
+                .filter { it.isNotEmpty() }
+                .joinToString(" ")
+            if (joined.isNotBlank()) return joined
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
+            val conversation = extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
+                ?.toString()
+                .orEmpty()
+            if (conversation.isNotBlank()) return conversation
+        }
+
+        val ticker = sbn.notification.tickerText?.toString().orEmpty()
+        if (ticker.isNotBlank()) return ticker
+
+        return ""
+    }
+
+    private fun extractMessagingStyleText(extras: Bundle): String {
+        val messages = extras.getParcelableArray(Notification.EXTRA_MESSAGES) ?: return ""
+        val lines = mutableListOf<String>()
+
+        for (item in messages) {
+            if (item is Bundle) {
+                val line = item.getCharSequence("text")?.toString()?.trim().orEmpty()
+                if (line.isNotBlank()) {
+                    lines.add(line)
+                }
+            }
+        }
+
+        return lines.joinToString(" ").trim()
+    }
+
+    private fun isLikelyRedacted(text: String): Boolean {
+        if (text.isBlank()) return false
+        val normalized = text.lowercase().replace("\\s+".toRegex(), " ").trim()
+
+        if (normalized.length <= 2) return true
+        if (redactionMarkers.any { normalized.contains(it) }) return true
+
+        return false
+    }
+
+    private fun buildNotificationKey(sbn: StatusBarNotification): String {
+        val tag = sbn.tag ?: ""
+        val key = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) sbn.key else ""
+        return "${sbn.packageName}|${sbn.id}|$tag|$key"
+    }
+
+    private fun cancelPendingHiddenForward(notificationKey: String) {
+        synchronized(pendingHiddenEvents) {
+            val pending = pendingHiddenEvents.remove(notificationKey) ?: return
+            mainHandler.removeCallbacks(pending.runnable)
+        }
+    }
+
+    private fun scheduleHiddenOrNoPreviewForward(
+        notificationKey: String,
+        packageName: String,
+        title: String,
+        isRedacted: Boolean,
+        eventTimestamp: Long,
+    ) {
+        cancelPendingHiddenForward(notificationKey)
+
+        val runnable = Runnable {
+            val appName = getAppName(packageName)
+            val fallbackText = if (isRedacted) {
+                "[Hidden by Android privacy settings]"
+            } else {
+                "[No preview available for this notification]"
+            }
+            val fallbackCategory = if (isRedacted) "HIDDEN_BY_OS" else "NO_PREVIEW"
+
+            if (!MessageConsistencyCoordinator.shouldProcessNotification(packageName, fallbackText)) {
+                return@Runnable
+            }
+
+            NotificationEventEmitter.sendNotification(
+                context = applicationContext,
+                appName = appName,
+                title = title.ifBlank { appName },
+                text = fallbackText,
+                packageName = packageName,
+                flagged = false,
+                matchedCategory = fallbackCategory,
+                conversationContext = "",
+                confidence = 0.0f,
+                sender = title.ifBlank { appName },
+                appSource = appName,
+                captureMethod = "notification",
+                eventTimestamp = eventTimestamp,
+            )
+
+            Log.d(
+                "IntentFirewall|NotifService",
+                "Forwarded metadata-only notification package=$packageName category=$fallbackCategory"
+            )
+        }
+
+        synchronized(pendingHiddenEvents) {
+            pendingHiddenEvents[notificationKey] = PendingHiddenEvent(
+                scheduledAt = System.currentTimeMillis(),
+                runnable = runnable,
+            )
+        }
+
+        mainHandler.postDelayed(runnable, UPGRADE_WINDOW_MS)
+    }
 
     private fun getAppName(packageName: String): String {
         return when (packageName) {
             "com.whatsapp", "com.whatsapp.w4b" -> "WhatsApp"
             "org.telegram.messenger" -> "Telegram"
-            "com.android.mms", "com.google.android.apps.messaging" -> "SMS"
-            else -> "Unknown"
+            "com.google.android.gm" -> "Gmail"
+            "com.microsoft.office.outlook" -> "Outlook"
+            "com.android.mms", "com.google.android.apps.messaging", "com.samsung.android.messaging", "com.truecaller" -> "SMS"
+            "com.android.shell" -> "System"
+            else -> "System"
         }
+    }
+
+    private fun isCallStateNotification(packageName: String, title: String, text: String): Boolean {
+        if (
+            packageName != "com.whatsapp" &&
+            packageName != "com.whatsapp.w4b" &&
+            packageName != "org.telegram.messenger" &&
+            packageName != "com.truecaller"
+        ) {
+            return false
+        }
+
+        val normalized = "$title $text"
+            .lowercase()
+            .replace("\\s+".toRegex(), " ")
+            .trim()
+        if (normalized.isBlank()) return false
+
+        val callMarkers = listOf(
+            "calling",
+            "calling...",
+            "calling…",
+            "ringing",
+            "ringing...",
+            "ringing…",
+            "ongoing voice call",
+            "voice call",
+            "video call",
+            "on a call",
+            "missed call",
+            "call ended",
+            "declined",
+            "connected",
+            "on hold",
+        )
+
+        if (!callMarkers.any { normalized.contains(it) }) return false
+
+        val scamMarkers = listOf(
+            "otp", "kyc", "verify", "account", "bank", "pin", "cvv", "upi",
+            "payment", "refund", "lottery", "gift", "prize", "link", "http", "www"
+        )
+
+        return scamMarkers.none { normalized.contains(it) }
+    }
+
+    private fun dispatchCallStateHintFromNotification(packageName: String, title: String, text: String) {
+        if (!CallProtectionPrefs.isArmed(applicationContext)) return
+
+        val telephonyState = mapCallStatusToTelephonyState(title, text) ?: return
+        val callerLabel = title.ifBlank { "unknown" }
+
+        try {
+            if (!CallAudioMonitorService.isServiceRunning) {
+                val startIntent = Intent(applicationContext, CallAudioMonitorService::class.java).apply {
+                    action = CallAudioMonitorService.ACTION_START
+                    putExtra(CallAudioMonitorService.EXTRA_CALLER_NUMBER, callerLabel)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    applicationContext.startForegroundService(startIntent)
+                } else {
+                    applicationContext.startService(startIntent)
+                }
+            }
+
+            val hintIntent = Intent(applicationContext, CallAudioMonitorService::class.java).apply {
+                action = CallAudioMonitorService.ACTION_HINT_STATE
+                putExtra(CallAudioMonitorService.EXTRA_HINT_STATE, telephonyState)
+                putExtra(CallAudioMonitorService.EXTRA_HINT_SOURCE, "NotificationService:$packageName")
+                putExtra(CallAudioMonitorService.EXTRA_CALLER_NUMBER, callerLabel)
+            }
+            applicationContext.startService(hintIntent)
+        } catch (e: Exception) {
+            Log.w(
+                "IntentFirewall|NotifService",
+                "Failed to dispatch call-state hint from notification package=$packageName",
+                e
+            )
+        }
+    }
+
+    private fun mapCallStatusToTelephonyState(title: String, text: String): Int? {
+        val normalized = "$title $text"
+            .lowercase()
+            .replace("\\s+".toRegex(), " ")
+            .trim()
+        if (normalized.isBlank()) return null
+
+        val endedMarkers = listOf(
+            "missed call",
+            "call ended",
+            "declined",
+            "busy",
+            "not answered",
+        )
+        if (endedMarkers.any { normalized.contains(it) }) {
+            return TelephonyManager.CALL_STATE_IDLE
+        }
+
+        val activeMarkers = listOf(
+            "ongoing voice call",
+            "on a call",
+            "connected",
+            "voice call",
+            "video call",
+            "in call",
+        )
+        if (activeMarkers.any { normalized.contains(it) }) {
+            return TelephonyManager.CALL_STATE_OFFHOOK
+        }
+
+        val ringingMarkers = listOf(
+            "ringing",
+            "calling",
+            "incoming call",
+        )
+        if (ringingMarkers.any { normalized.contains(it) }) {
+            return TelephonyManager.CALL_STATE_RINGING
+        }
+
+        return null
     }
 }

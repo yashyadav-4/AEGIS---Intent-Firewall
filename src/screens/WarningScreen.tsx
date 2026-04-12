@@ -6,10 +6,7 @@ import {
   TouchableOpacity,
   Animated,
   StatusBar,
-  Dimensions,
 } from 'react-native';
-
-const {width} = Dimensions.get('window');
 
 type Props = {
   category?: string;
@@ -60,7 +57,7 @@ const WarningScreen = ({
         }),
       ]),
     ).start();
-  }, []);
+  }, [fadeAnim, pulseAnim, slideAnim]);
 
   return (
     <Animated.View
@@ -113,10 +110,25 @@ const WarningScreen = ({
         </View>
       </View>
 
+      {/* IMPORTANT DISCLAIMER */}
+      <View style={styles.disclaimerContainer}>
+        <Text style={styles.disclaimerTitle}>⚠️ Important limitations</Text>
+        <Text style={styles.disclaimerText}>
+          This app uses on-device AI to detect potential scams. Due to Android OS 
+          limitations, we cannot automatically block calls or messages - 
+          this requires your manual action in the default phone/messages app.
+          {"\n\n"}
+          Detected by: AI (Tier 2/3) • Confidence: {confidence}%
+          {"\n"}
+          Always verify independently before taking financial action. False positives are possible.
+        </Text>
+      </View>
+
       {/* Action Buttons */}
       <View style={styles.buttonContainer}>
         <TouchableOpacity style={styles.blockButton} onPress={onBlock}>
-          <Text style={styles.blockButtonText}>🚫 BLOCK SENDER</Text>
+          <Text style={styles.blockButtonText}>🚫 MARK AS SCAM</Text>
+          <Text style={styles.blockButtonSubText}>Requires manual block in messaging app</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.helpButton} onPress={onCallHelp}>
@@ -125,7 +137,7 @@ const WarningScreen = ({
 
         <TouchableOpacity style={styles.dismissButton} onPress={onDismiss}>
           <Text style={styles.dismissButtonText}>
-            I understand the risk — Dismiss
+            Discard this threat
           </Text>
         </TouchableOpacity>
       </View>
@@ -206,6 +218,27 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 4,
   },
+  disclaimerContainer: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    marginHorizontal: 16,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#F4A261',
+  },
+  disclaimerTitle: {
+    color: '#F4A261',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+  disclaimerText: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 12,
+    lineHeight: 18,
+  },
   explanationBox: {
     marginHorizontal: 24,
     backgroundColor: 'rgba(0,0,0,0.2)',
@@ -255,6 +288,12 @@ const styles = StyleSheet.create({
     color: '#E63946',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  blockButtonSubText: {
+    color: '#E63946',
+    fontSize: 10,
+    marginTop: 2,
+    opacity: 0.8,
   },
   helpButton: {
     backgroundColor: 'rgba(0,0,0,0.25)',

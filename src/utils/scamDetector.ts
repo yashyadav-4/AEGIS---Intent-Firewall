@@ -47,31 +47,13 @@ const FINANCIAL_FRAUD = [
 // ─── Main Detector ──────────────────────────────────────────────
 
 export const detectScam = (text: string): ScamResult => {
-  const lower = text.toLowerCase();
-  const matched: string[] = [];
-  let score = 0;
-
-  const check = (keywords: string[], weight: number, cat: string) => {
-    keywords.forEach(kw => {
-      if (lower.includes(kw)) {
-        matched.push(kw);
-        score += weight;
-      }
-    });
+  console.log("use native detection");
+  return {
+    isScam: false,
+    confidence: 0,
+    category: "use native detection",
+    matchedKeywords: []
   };
-
-  check(URGENCY_FINANCIAL, 15, 'Urgency/Financial');
-  check(OTP_PHISHING, 25, 'OTP Phishing');
-  check(AUTHORITY_SCAM, 20, 'Authority Scam');
-  check(IMPERSONATION, 10, 'Impersonation');
-  check(FINANCIAL_FRAUD, 15, 'Financial Fraud');
-
-  const confidence = Math.min(score, 100);
-  const isScam = confidence >= 25;
-
-  const category = getCategory(lower, matched);
-
-  return {isScam, confidence, category, matchedKeywords: matched};
 };
 
 const getCategory = (text: string, matched: string[]): string => {

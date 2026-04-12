@@ -1,0 +1,213 @@
+Gemini Tier3 Logging Reference (Current)
+=======================================
+
+Purpose
+-------
+This document records the exact input we send to Gemini and the output schema we expect/parse.
+
+
+1) Input We Send To Gemini
+--------------------------
+
+Source: android/app/src/main/java/com/intentfirewall/GeminiScamClassifier.kt (buildPrompt)
+
+The prompt body includes these runtime values:
+
+- <context>
+	Last up to 5 recent messages, newline-separated.
+
+- <current_message>
+	Current message text being classified.
+
+- <sender_type>
+	One of:
+	- KNOWN_CONTACT (if senderKnown=true)
+	- BUSINESS (if sender contains bank/support/service)
+	- UNKNOWN (otherwise)
+
+It also includes strict rule instructions:
+- Hard-safe first
+- Hard-scam second
+- Evidence-bound category assignment
+- Hinglish/transliteration equivalence
+- Ambiguity -> UNCERTAIN
+- JSON-only output
+
+
+2) Expected Gemini Output Schema
+--------------------------------
+
+Preferred schema (new):
+
+{
+	"classification": "SAFE | SCAM | UNCERTAIN",
+	"confidence": "HIGH | MEDIUM | LOW",
+	"category": "OTP_SCAM | KYC_SCAM | LOTTERY_SCAM | JOB_SCAM | LOAN_SCAM | IMPERSONATION | INVESTMENT_SCAM | GENERIC_SCAM | SAFE | UNCERTAIN",
+	"evidence": "Exact phrase(s) from current message that triggered this classification. EMPTY if SAFE.",
+	"context_used": true,
+	"reasoning": "One sentence max.",
+	"hard_rule_triggered": "HARD_SAFE | HARD_SCAM | NONE"
+}
+
+
+3) Parser Mapping In App
+------------------------
+
+Source: android/app/src/main/java/com/intentfirewall/GeminiScamClassifier.kt (parseGeminiDecision)
+
+When new schema is present:
+- isScam = (classification == "SCAM")
+- action = "alert" if SCAM else "safe"
+- confidence mapping:
+	- HIGH -> 0.92
+	- MEDIUM -> 0.72
+	- LOW -> 0.45
+	- fallback -> 0.70 for scam, 0.25 for safe
+- threatType = category
+- reason = evidence + " | " + reasoning (if both present)
+
+Backward compatibility:
+- If new schema fields are missing, parser falls back to legacy schema:
+	{ isScam, confidence(0..1), reason, threatType, action }
+
+
+4) Runtime Decision Notes
+-------------------------
+
+Even if Gemini returns SCAM, final app alerting still passes local policy guards in DetectionPipeline.
+Examples:
+- Hard-safe bypass for greetings/ack/call-status noise.
+- No OTP_SCAM category unless OTP-style evidence exists in current message.
+- Hard-evidence override for clearly malicious phrases (authority + verification ask, etc.).
+
+
+5) Sample Input/Output Pair
+---------------------------
+
+Input to Gemini (conceptual):
+
+<context>
+Afraaz BU: hlo
+Afraaz BU: kya kar raha
+</context>
+<current_message>
+Hlo sir i am from rbi ... verify your verification code
+</current_message>
+<sender_type>
+UNKNOWN
+</sender_type>
+
+Expected output:
+
+{
+	"classification": "SCAM",
+	"confidence": "HIGH",
+	"category": "IMPERSONATION",
+	"evidence": "i am from rbi ... verification code",
+	"context_used": false,
+	"reasoning": "Authority impersonation plus verification-code request.",
+	"hard_rule_triggered": "HARD_SCAM"
+}
+
+
+6) Audit Checklist For Wrong Decisions
+--------------------------------------
+
+When debugging wrong alerts/misses, log these first:
+- CURRENT_MESSAGE sent to Gemini
+- RECENT_CONTEXT sent to Gemini
+- Raw Gemini JSON output
+- Parsed fields (classification/confidence/category/evidence)
+- Final DetectionPipeline decision (flagged/category)
+
+
+7) Call Pipeline Proposal (User Draft)
+--------------------------------------
+
+Core problem first:
+- Android 10+ restricts direct call-audio recording for third-party apps.
+- Production-safe options are:
+
+| Approach | How it works | Limitation |
+|----------|--------------|------------|
+| Accessibility + AudioCapture | Capture speaker output with AudioRecord on VOICE_COMMUNICATION | Works on many devices, blocked on some OEMs |
+| Telecom/InCallService | Register as dialer app, get call events + routing | User must set app as default dialer |
+
+Most robust production direction: InCallService + foreground AudioRecord pipeline.
+
+
+Proposed full architecture:
+
+INCOMING CALL
+	|
+	v
+InCallService (default dialer)
+  - call start detection
+  - caller number extraction
+  - trigger capture
+	|
+	v
+AudioCaptureManager (foreground)
+  - VOICE_COMMUNICATION AudioRecord
+  - 16k mono PCM
+  - 3s chunks
+	|
+	v
+On-device prefilter
+  - VAD/silence drop
+  - skip chunks under 1s
+	|
+	v
+Bounded chunk queue (FIFO, max 10)
+	|
+	v
+Gemini API client
+  - PCM -> base64
+  - audio prompt
+  - retry with exponential backoff
+  - 8s timeout
+	|
+	v
+Response parser
+  - strict JSON extraction
+  - risk mapping + evidence
+	|
+	v
+Decision engine
+  - SAFE -> no action
+  - UNCERTAIN -> wait next chunk
+  - SCAM -> alert
+	|
+	v
+Alert manager
+  - overlay warning
+  - vibration
+  - decision trace logging
+
+
+Component notes from draft:
+- InCallService for call lifecycle events.
+- AudioCaptureService as a foreground recorder.
+- VAD energy check before network send.
+- Gemini API audio analysis with retry.
+- Rolling window decisioning to avoid one-chunk false alerts.
+
+
+Draft permission set:
+- android.permission.RECORD_AUDIO
+- android.permission.READ_PHONE_STATE
+- android.permission.FOREGROUND_SERVICE
+- android.permission.FOREGROUND_SERVICE_MICROPHONE
+- android.permission.INTERNET
+- android.permission.SYSTEM_ALERT_WINDOW
+
+
+Design decisions called out in draft:
+- VOICE_COMMUNICATION source for legal/available call stream path.
+- 3-second chunks for semantic context + low latency.
+- Silence filtering to save quota and reduce false positives.
+- Rolling 5-chunk risk window to smooth errors.
+- Retry with backoff for transient API failures.
+- UNCERTAIN path preferred over forced SCAM.
+- Foreground service to reduce process kills during calls.
+

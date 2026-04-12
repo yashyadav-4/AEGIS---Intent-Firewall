@@ -2,11 +2,15 @@ import React, {useState, useEffect} from 'react';
 import {
   View, Text, StyleSheet, StatusBar,
   ScrollView, Switch, TouchableOpacity,
-  NativeEventEmitter, NativeModules,
+  NativeEventEmitter,
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
+import type {StackNavigationProp} from '@react-navigation/stack';
 import {getSettings, saveSettings, saveThreat, getThreats, Threat} from '../utils/storage';
 import {detectScam} from '../utils/scamDetector';
+import type {RootStackParamList} from '../navigation/types';
+
+type BottomNavScreen = Exclude<keyof RootStackParamList, 'Warning'>;
 
 const APP_ICONS: Record<string, string> = {
   WhatsApp: '💬',
@@ -15,20 +19,33 @@ const APP_ICONS: Record<string, string> = {
   'Phone Call': '📞',
 };
 
+const NAV_ITEMS: Array<{icon: string; label: string; screen: BottomNavScreen}> = [
+  {icon: '🏠', label: 'Home', screen: 'Home'},
+  {icon: '📋', label: 'History', screen: 'History'},
+  {icon: '⚙️', label: 'Settings', screen: 'Settings'},{icon: '🐞', label: 'Debug', screen: 'Debug'},
+];
+
 const HomeScreen = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
   const [messageProtection, setMessageProtection] = useState(false);
   const [callProtection, setCallProtection] = useState(false);
   const [recentThreats, setRecentThreats] = useState<Threat[]>([]);
   const [isProtected, setIsProtected] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
-      const s = await getSettings();
-      setMessageProtection(s.messageProtection);
-      setCallProtection(s.callProtection);
-      setIsProtected(s.messageProtection || s.callProtection);
-      loadRecentThreats();
+      try {
+        const s = await getSettings();
+        setMessageProtection(s.messageProtection);
+        setCallProtection(s.callProtection);
+        setIsProtected(s.messageProtection || s.callProtection);
+        await loadRecentThreats();
+      } catch (err) {
+        console.error('Error loading settings', err);
+      } finally {
+        setIsLoading(false);
+      }
     };
     load();
   }, []);
@@ -37,13 +54,66 @@ const HomeScreen = () => {
     const eventEmitter = new NativeEventEmitter();
     const subscription = eventEmitter.addListener('onNotification', async data => {
       const settings = await getSettings();
-      if (!settings.messageProtection) return;
+      const isCallSource = data?.source === 'call';
+      if (isCallSource && !settings.callProtection) return;
+      if (!isCallSource && !settings.messageProtection) return;
+
+      if (isCallSource) {
+        const callType = String(data?.type ?? 'call_event');
+        const riskScore = Number.isFinite(data?.riskScore) ? Number(data.riskScore) : 0;
+        const shouldStoreCallThreat =
+          callType === 'call_blocked' ||
+          callType === 'call_suspicious' ||
+          callType === 'call_scam_alert';
+
+        if (!shouldStoreCallThreat) {
+          return;
+        }
+
+        const message = String(data?.reason || data?.message || 'Call risk event');
+        const confidence = Math.max(0, Math.min(100, riskScore));
+        const category = callType.toUpperCase();
+        const blocked = callType === 'call_blocked' || settings.autoBlock;
+
+        const savedThreat = await saveThreat({
+          app: 'Phone Call',
+          appIcon: APP_ICONS['Phone Call'],
+          message,
+          category,
+          confidence,
+          blocked,
+          time: 'Just now',
+        });
+
+        loadRecentThreats();
+
+        if (!settings.autoBlock) {
+          navigation.navigate('Warning', {
+            category,
+            confidence,
+            message,
+            app: 'Phone Call',
+            threatId: savedThreat?.id,
+          });
+        }
+        return;
+      }
+
+      const rawText = String(data?.text ?? '');
+      const normalizedText = rawText.toLowerCase().replace(/\s+/g, ' ').trim();
+      const looksLikeCallStatus =
+        data?.matchedCategory === 'CALL_STATUS' ||
+        /(calling(\.\.\.|…)?|ringing(\.\.\.|…)?|ongoing voice call|on a call|voice call|video call|missed call|call ended|declined|connected|on hold)/i.test(normalizedText);
+
+      if (looksLikeCallStatus && data?.flagged !== true) {
+        return;
+      }
 
       // Use native Tier 1 signal if available, fall back to JS detector
       const nativeFlagged: boolean = data.flagged === true;
       const nativeCategory: string = data.matchedCategory || '';
 
-      const jsResult = detectScam(data.text);
+      const jsResult = detectScam(rawText);
 
       // Combine: native flag OR JS detector triggers warning
       const isScam = nativeFlagged || jsResult.isScam;
@@ -58,10 +128,10 @@ const HomeScreen = () => {
                   '| js:', jsResult.isScam, jsResult.category);
 
       if (isScam) {
-        await saveThreat({
+        const savedThreat = await saveThreat({
           app: data.appName,
           appIcon: APP_ICONS[data.appName] || '📩',
-          message: data.text,
+          message: rawText,
           category,
           confidence,
           blocked: settings.autoBlock,
@@ -71,22 +141,60 @@ const HomeScreen = () => {
         loadRecentThreats();
 
         if (!settings.autoBlock) {
-          navigation.navigate('Warning' as never, {
+          navigation.navigate('Warning', {
             category,
             confidence,
-            message: data.text,
+            message: rawText,
             app: data.appName,
-          } as never);
+            threatId: savedThreat?.id,
+          });
         }
       }
     });
 
     return () => subscription.remove();
-  }, []);
+  }, [navigation]);
 
   const loadRecentThreats = async () => {
-    const all = await getThreats();
-    setRecentThreats(all.slice(0, 3));
+    try {
+      const all = await getThreats();
+      setRecentThreats(all.slice(0, 3));
+    } catch (err) {
+      console.error('Error loading threats', err);
+    }
+  };
+
+  const simulateAttack = async () => {
+    const mockNotification = {
+      appName: 'WhatsApp',
+      text: 'URGENT: Your bank account has been blocked. Verify now at http://bit.ly/fake-bank',
+    };
+
+    const jsResult = detectScam(mockNotification.text);
+
+    if (!jsResult.isScam) {
+      return;
+    }
+
+    const savedThreat = await saveThreat({
+      app: mockNotification.appName,
+      appIcon: APP_ICONS[mockNotification.appName] || '📩',
+      message: mockNotification.text,
+      category: jsResult.category,
+      confidence: jsResult.confidence,
+      blocked: false,
+      time: 'Just now',
+    });
+
+    await loadRecentThreats();
+
+    navigation.navigate('Warning', {
+      category: jsResult.category,
+      confidence: jsResult.confidence,
+      message: mockNotification.text,
+      app: mockNotification.appName,
+      threatId: savedThreat?.id,
+    });
   };
 
   const handleMessageToggle = async (val: boolean) => {
@@ -100,6 +208,14 @@ const HomeScreen = () => {
     setIsProtected(messageProtection || val);
     await saveSettings({callProtection: val});
   };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, {justifyContent: 'center', alignItems: 'center'}]}>
+        <Text style={{color: '#fff'}}>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -176,19 +292,21 @@ const HomeScreen = () => {
           </Text>
         </View>
 
+        {__DEV__ && (
+          <TouchableOpacity style={styles.simulateButton} onPress={simulateAttack}>
+            <Text style={styles.simulateButtonText}>Simulate Attack (Test)</Text>
+          </TouchableOpacity>
+        )}
+
         <View style={{height: 30}} />
       </ScrollView>
 
       <View style={styles.bottomNav}>
-        {[
-          {icon: '🏠', label: 'Home', screen: 'Home'},
-          {icon: '📋', label: 'History', screen: 'History'},
-          {icon: '⚙️', label: 'Settings', screen: 'Settings'},
-        ].map(item => (
+        {NAV_ITEMS.map(item => (
           <TouchableOpacity
             key={item.label}
             style={styles.navItem}
-            onPress={() => navigation.navigate(item.screen as never)}>
+            onPress={() => navigation.navigate(item.screen)}>
             <Text style={styles.navIcon}>{item.icon}</Text>
             <Text style={[styles.navLabel, item.screen === 'Home' && styles.navLabelActive]}>
               {item.label}
@@ -251,6 +369,13 @@ const styles = StyleSheet.create({
     marginTop: 8, borderWidth: 1, borderColor: '#2D3748',
   },
   privacyText: {fontSize: 12, color: '#A0AEC0', textAlign: 'center', lineHeight: 18},
+  simulateButton: {
+    backgroundColor: '#E63946', borderRadius: 12, paddingVertical: 14,
+    marginTop: 12, alignItems: 'center',
+  },
+  simulateButtonText: {
+    color: '#fff', fontSize: 14, fontWeight: '700', letterSpacing: 0.5,
+  },
   bottomNav: {
     flexDirection: 'row', backgroundColor: '#1A1A2E',
     borderTopWidth: 1, borderTopColor: '#2D3748',

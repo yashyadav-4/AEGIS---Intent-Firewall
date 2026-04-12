@@ -1,5 +1,6 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "org.jetbrains.kotlin.kapt"
 apply plugin: "com.facebook.react"
 
 /**
@@ -72,6 +73,88 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+def localProps = new Properties()
+def localPropsFile = rootProject.file('local.properties')
+if (localPropsFile.exists()) {
+    localPropsFile.withInputStream { stream ->
+        localProps.load(stream)
+    }
+}
+
+def dotEnv = new Properties()
+def dotEnvFile = rootProject.file('../.env')
+if (dotEnvFile.exists()) {
+    dotEnvFile.eachLine('UTF-8') { line ->
+        def trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) return
+        def splitIndex = trimmed.indexOf('=')
+        if (splitIndex <= 0) return
+
+        def key = trimmed.substring(0, splitIndex).trim()
+        def value = trimmed.substring(splitIndex + 1).trim()
+        if ((value.startsWith('"') && value.endsWith('"') && value.length() >= 2) ||
+            (value.startsWith("'") && value.endsWith("'") && value.length() >= 2)) {
+            value = value.substring(1, value.length() - 1)
+        }
+        dotEnv.setProperty(key, value)
+    }
+}
+
+def readSecret = { String key ->
+    return dotEnv.getProperty(key, localProps.getProperty(key, System.getenv(key) ?: ''))
+}
+
+def parseApiKeys = { String raw ->
+    return (raw ?: '')
+        .split(',')
+        .collect { it.trim() }
+        .findAll { it }
+}
+
+def geminiKeysFromAp = (1..5)
+    .collect { idx -> readSecret("AP${idx}")?.trim() }
+    .findAll { it }
+
+def geminiKeysFromNumberedVars = (1..5)
+    .collect { idx -> readSecret("GEMINI_API_KEY_${idx}")?.trim() }
+    .findAll { it }
+
+def geminiKeys = []
+if (!geminiKeysFromAp.isEmpty()) {
+    geminiKeys = geminiKeysFromAp
+} else if (!geminiKeysFromNumberedVars.isEmpty()) {
+    geminiKeys = geminiKeysFromNumberedVars
+} else {
+    geminiKeys = parseApiKeys(readSecret('GEMINI_API_KEYS'))
+}
+
+if (geminiKeys.isEmpty()) {
+    def singleKey = readSecret('GEMINI_API_KEY')?.trim()
+    if (singleKey) {
+        geminiKeys = [singleKey]
+    }
+}
+
+def geminiApiKeysRaw = geminiKeys.join(',')
+def geminiApiKeyRaw = geminiKeys ? geminiKeys[0] : ''
+def geminiApiKey1Raw = geminiKeys.size() > 0 ? geminiKeys[0] : ''
+def geminiApiKey2Raw = geminiKeys.size() > 1 ? geminiKeys[1] : ''
+def geminiApiKey3Raw = geminiKeys.size() > 2 ? geminiKeys[2] : ''
+def geminiApiKey4Raw = geminiKeys.size() > 3 ? geminiKeys[3] : ''
+def geminiApiKey5Raw = geminiKeys.size() > 4 ? geminiKeys[4] : ''
+
+def geminiApiKeyEscaped = geminiApiKeyRaw.replace('\\', '\\\\').replace('"', '\\"')
+def geminiApiKeysEscaped = geminiApiKeysRaw.replace('\\', '\\\\').replace('"', '\\"')
+def geminiApiKey1Escaped = geminiApiKey1Raw.replace('\\', '\\\\').replace('"', '\\"')
+def geminiApiKey2Escaped = geminiApiKey2Raw.replace('\\', '\\\\').replace('"', '\\"')
+def geminiApiKey3Escaped = geminiApiKey3Raw.replace('\\', '\\\\').replace('"', '\\"')
+def geminiApiKey4Escaped = geminiApiKey4Raw.replace('\\', '\\\\').replace('"', '\\"')
+def geminiApiKey5Escaped = geminiApiKey5Raw.replace('\\', '\\\\').replace('"', '\\"')
+def geminiModelRaw = readSecret('GEMINI_MODEL') ?: 'gemma-4-31b'
+def geminiModelEscaped = geminiModelRaw.replace('\\', '\\\\').replace('"', '\\"')
+def geminiVoiceModelRaw = readSecret('GEMINI_VOICE_MODEL') ?: 'gemini-2.5-flash-native-audio-latest'
+def geminiVoiceModelEscaped = geminiVoiceModelRaw.replace('\\', '\\\\').replace('"', '\\"')
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -84,13 +167,23 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "2.0"
+        buildConfigField "String", "GEMINI_API_KEY", "\"${geminiApiKeyEscaped}\""
+        buildConfigField "String", "GEMINI_API_KEYS", "\"${geminiApiKeysEscaped}\""
+        buildConfigField "String", "GEMINI_API_KEY_1", "\"${geminiApiKey1Escaped}\""
+        buildConfigField "String", "GEMINI_API_KEY_2", "\"${geminiApiKey2Escaped}\""
+        buildConfigField "String", "GEMINI_API_KEY_3", "\"${geminiApiKey3Escaped}\""
+        buildConfigField "String", "GEMINI_API_KEY_4", "\"${geminiApiKey4Escaped}\""
+        buildConfigField "String", "GEMINI_API_KEY_5", "\"${geminiApiKey5Escaped}\""
+        buildConfigField "String", "GEMINI_MODEL", "\"${geminiModelEscaped}\""
+        buildConfigField "String", "GEMINI_VOICE_MODEL", "\"${geminiVoiceModelEscaped}\""
+        buildConfigField "String", "GEMINI_LIVE_MODEL", '"models/gemini-3.1-flash-live-preview"'
         ndk {
             abiFilters "arm64-v8a", "armeabi-v7a"
         }
     }
     applicationVariants.all { variant ->
         variant.outputs.all {
-            outputFileName = "intent-firewall-v2.apk"
+            outputFileName = "intent-firewall-v5.apk"
         }
     }
     signingConfigs {
@@ -119,6 +212,10 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
+    testOptions {
+        unitTests.returnDefaultValues = true
+        unitTests.includeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -138,6 +235,17 @@ dependencies {
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
     implementation 'androidx.localbroadcastmanager:localbroadcastmanager:1.1.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'androidx.room:room-runtime:2.7.2'
+    implementation 'androidx.room:room-ktx:2.7.2'
+    kapt 'androidx.room:room-compiler:2.7.2'
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'io.mockk:mockk:1.13.12'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3'
+    testImplementation 'org.robolectric:robolectric:4.13'
+    testImplementation 'androidx.test:core:1.6.1'
+    testImplementation 'androidx.arch.core:core-testing:2.2.0'
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
