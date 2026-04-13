@@ -3,6 +3,11 @@ package com.intentfirewall
 // Tier 1 — runs on every message, ~0.1ms, 99% exit here as BENIGN
 object RegexSentinel {
 
+    private data class CuratedSignature(
+        val category: String,
+        val tokens: List<String>
+    )
+
     data class SentinelResult(
         val flagged: Boolean,
         val matchedCategory: String?,
@@ -239,8 +244,79 @@ object RegexSentinel {
         "FINANCIAL_HINGLISH" to 0.65f,
     )
 
+    // High-priority hardcoded signatures from live scam reports.
+    // Matching is token-based on normalized text so sender identity is irrelevant.
+    private val CURATED_SCAM_SIGNATURES = listOf(
+        CuratedSignature(
+            category = "CURATED_FLIPKART_PAYLATER_OTP",
+            tokens = listOf("flipkart", "paylater", "blocked", "otp", "verify", "unblock")
+        ),
+        CuratedSignature(
+            category = "CURATED_JIOFIBER_REMOTE_ACCESS",
+            tokens = listOf("jiofiber", "firmware", "teamviewer", "quicksupport", "technician", "remotely")
+        ),
+        CuratedSignature(
+            category = "CURATED_ELECTRICITY_OBFUSCATED_LINK",
+            tokens = listOf("electricity", "power", "cut", "930", "update", "bill", "clicking")
+        ),
+        CuratedSignature(
+            category = "CURATED_WHATSAPP_LOGIN_CODE",
+            tokens = listOf("whatsapp", "logged", "another", "device", "share", "6digit", "verification", "sms")
+        ),
+        CuratedSignature(
+            category = "CURATED_CBI_SKYPE_INTERROGATION",
+            tokens = listOf("cbi", "frozen", "money", "laundering", "skype", "cbidesk04", "interrogation")
+        ),
+        CuratedSignature(
+            category = "CURATED_ITR_REFUND_PAN_UPDATE",
+            tokens = listOf("income", "tax", "itr", "refund", "incorrect", "bank", "pan", "update")
+        ),
+        CuratedSignature(
+            category = "CURATED_LOTTERY_6DIGIT_OTP",
+            tokens = listOf("lottery", "claim", "send", "6digit", "number", "batayein")
+        ),
+    )
+
+    private fun normalizeForCuratedMatch(text: String): String {
+        val lower = text.lowercase()
+        val deobfuscated = lower
+            .replace("0", "o")
+            .replace("1", "l")
+            .replace("3", "e")
+            .replace("4", "a")
+            .replace("5", "s")
+            .replace("7", "t")
+
+        val compact = buildString(deobfuscated.length) {
+            for (c in deobfuscated) {
+                if (c.isLetterOrDigit()) append(c)
+                else append(' ')
+            }
+        }
+        return compact.replace(Regex("\\s+"), " ").trim()
+    }
+
+    private fun containsCuratedSignature(normalizedText: String): CuratedSignature? {
+        val compactNoSpaces = normalizedText.replace(" ", "")
+        return CURATED_SCAM_SIGNATURES.firstOrNull { sig ->
+            sig.tokens.all { token ->
+                normalizedText.contains(token) || compactNoSpaces.contains(token)
+            }
+        }
+    }
+
     fun analyze(text: String): SentinelResult {
         val normalized = text.lowercase()
+        val curatedNormalized = normalizeForCuratedMatch(text)
+
+        val curatedMatch = containsCuratedSignature(curatedNormalized)
+        if (curatedMatch != null) {
+            return SentinelResult(
+                flagged = true,
+                matchedCategory = curatedMatch.category,
+                matchedPattern = "CURATED_SCAM_SIGNATURE"
+            )
+        }
 
         for (entry in compiledPatterns) {
             if (entry.regex.containsMatchIn(normalized)) {

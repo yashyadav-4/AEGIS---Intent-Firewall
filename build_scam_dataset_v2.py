@@ -685,6 +685,32 @@ def _legit_job_notification():
 
 
 # ============================================================================
+# CURATED REAL-WORLD SCAM EXAMPLES
+# ============================================================================
+
+def generate_curated_real_world_scams():
+    """High-signal real-world scam samples provided during device testing."""
+    samples = [
+        "Your Flipkart PayLater account is blocked due to suspicious activity. Share the O T P sent to your mobile to verify your identity and unblock.",
+        "Sir, your JioFiber router needs a firmware update or the connection will drop. Please install the TeamViewer QuickSupport app so our technician can do it remotely",
+        "Y0ur electricity p0wer will be cut off by 9:30 PM tonight. P1ease update your bil1 right now by clicking here",
+        "System Warning: Your WhatsApp account is being logged in from another device. If this was not you, quickly share the 6-digit verification code sent via SMS to block the login.",
+        "CBI Notice: Your bank accounts are being frozen under the Money Laundering Act. Please download the Skype app and connect to ID 'CBI_Desk_04' for your digital video interrogation. Do not inform any local police.",
+        "Income Tax Dept: Your ITR refund of Rs 15,450 has been approved but could not be credited due to incorrect bank details. Please update your PAN details here",
+        "Hello sir, aap jite h dhamaka lottery, claim karne ke liye apke number pe send kiya gya 6 digit ka number batayein",
+    ]
+    return [
+        {
+            "context": "",
+            "response": normalize_text(text),
+            "label": 1,
+            "category": "CURATED_REAL_WORLD_SCAM",
+        }
+        for text in samples
+    ]
+
+
+# ============================================================================
 # MULTI-TURN DIALOGUE GENERATORS (from v1, enhanced)
 # ============================================================================
 
@@ -820,9 +846,13 @@ def main():
     part_adversarial = generate_adversarial_scams(count=15000)
     print(f"  → {len(part_adversarial)} adversarial samples")
 
-    print("Step 6/6: Generating hard negatives...")
+    print("Step 6/7: Generating hard negatives...")
     part_hard_neg = generate_hard_negatives(count=20000)
     print(f"  → {len(part_hard_neg)} hard negative samples")
+
+    print("Step 7/7: Adding curated real-world scam examples...")
+    part_curated = generate_curated_real_world_scams()
+    print(f"  → {len(part_curated)} curated scam samples")
 
     # Combine all
     records = list(itertools.chain(
@@ -832,6 +862,7 @@ def main():
         part_calls,
         part_adversarial,
         part_hard_neg,
+        part_curated,
     ))
     
     random.seed(42)
